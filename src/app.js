@@ -5,6 +5,8 @@ const app = express();
 
 app.use(express.json()); // parse JSON request bodies
 
+app.set('trust proxy', true); // needed for req.ip to reflect the real client IP behind proxies
+
 app.get('/health', (req, res) => {              //sanity-check the server is actually running before you build anything else on top of it.                                      
   res.status(200).json({ status: 'ok' });
 });

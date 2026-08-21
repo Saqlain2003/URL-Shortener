@@ -146,3 +146,64 @@ Req/Bytes counts sampled once per second.
 **That 656ms Max in your cached run — is that a problem?** No, and it's worth knowing why not. That's very likely the very first request in the test, before autocannon's concurrent connections had all ramped up, or possibly the initial TCP/Redis connection warmup. One outlier out of 101,000 requests, sitting at 656ms while your 99th percentile is 10ms, is noise, not a pattern. If you saw many requests near 656ms, that would be a real problem worth investigating — a single one isn't.
 
 **Why did req/sec increase, not just latency decrease?** These are actually the same phenomenon viewed from two angles. Each request now finishes so much faster that your server can start serving the next request in the queue almost immediately, so far more requests complete within the same 10-second window. Low latency directly is high throughput at a fixed concurrency level.
+<br>
+<br>
+<br>
+
+# [DATE: 21 AUG 2026] 
+
+## 🎯 Goal for Today:
+* ***Implement Analytics without blocking a hot path with logging/analytics writes.***
+* ***Implement Auth & User Account.***
+
+## ✅ What I Implemented / Built:
+* Add a click-events collection in Mongo
+* Make the redirect endpoint fire-and-forget the analytics write (don't await it in the critical path — or push to a lightweight queue like BullMQ + Redis if you want to go further)
+* Capture: timestamp, short_code, referrer, user-agent, rough geo from IP
+* Build GET /api/analytics/:shortCode endpoint to aggregate this data
+* Implemented ***Cache Penetration Fix***
+
+## 🚧 Problems & Bugs Encountered:
+* **[Problem 1]:-** Showing empty count for non-existing URL instead of ***404 - Not Found***
+* **[Problem 2]:-** Non Existing URL searches cache and get miss, then searches DB and return 404. If 10000 simultaneously non existing URL is send, DB will crashed. ***[Cache Penetration]***
+
+## 💡 Solutions & Learnings:
+* **[Solution 1]:-** Check DB if URL exist if not return ***404 - Not Found***
+* **[Solution 2]:-** By Storing ***Negative TTL*** and ***Sentinel String(__NULL__)*** in cache for short duration (e.g. 60seconds) for non-existing visited URL
+* **[Understand];-** A few things worth understanding, not just pasting:
+
+1. **Why a sentinel string (__NULL__) and not just caching an empty string ""?** Because redisClient.get() returning an empty string vs returning null (key doesn't exist at all) can be easy to confuse in a conditional check. A distinct, unmistakable sentinel value removes any ambiguity about what's actually being represented — "we checked, and it doesn't exist" is a real piece of information, distinct from "not in cache at all."  
+
+2. **Why the negative TTL (60s) is much shorter than the positive TTL (3600s):** this is the important tradeoff to actually understand. If someone requests a code that doesn't exist yet, you cache "not found" for 60 seconds. If that exact code gets created 10 seconds later (rare, but possible — e.g., someone typo's a link, then the real owner creates that alias moments later), your negative cache would incorrectly keep saying "not found" for up to 60 more seconds. A full hour would make that problem much worse. 60 seconds is a reasonable balance: long enough to actually stop a penetration attack/repeated-miss pattern, short enough that a legitimate new URL doesn't stay invisible for long.
+
+3. **Why createShortUrl now calls redisClient.del() on the new code:** this directly closes the edge case from point 2. The moment a URL is actually created, we proactively clear any stale negative cache entry for that exact code — so even within that 60-second window, a legitimate creation immediately becomes visible rather than waiting out the TTL.
+
+## 🧪 Test in Postman:
+1. **Test 1 — Confirm penetration protection works**  
+* **GET** http://localhost:5000/thisdoesnotexist123
+* **Expected:** 404
+* **Immediately repeat the same request: GET** http://localhost:5000/thisdoesnotexist123
+* **Expected:** 404 again — but this time, add a quick console.log temporarily in getOriginalUrl right after the sentinel check to confirm Mongo was not queried the second time. Or just trust the logic and verify via Redis directly:  
+
+    ```bash
+        redis-cli
+        GET shorturl:thisdoesnotexist123
+    ```
+    Should return "__NULL__".
+
+2. **Test 2 — Confirm the TTL is actually short**
+
+    ```bash
+        redis-cli
+        TTL shorturl:thisdoesnotexist123
+    ```
+    Should show a number ≤ 60 (seconds remaining), not close to 3600.
+
+3. **Test 3 — Confirm creating that exact code clears the negative cache**
+* **POST /shorten** with { "longUrl": "https://example.com", "customAlias": "thisdoesnotexist123" }
+* **Then GET** http://localhost:5000/thisdoesnotexist123
+* **Expected:** this should now redirect successfully, not 404 — proving the negative cache was correctly invalidated on creation, even though the 60s TTL hadn't expired yet
+
+## 🏆 Achievements & Results:
+✅ Successfully tested analytics route.
+✅ Implemented Cache Penetration Fix.

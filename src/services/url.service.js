@@ -8,7 +8,9 @@ import { encodeBase62 } from '../utils/base62.js';
 
 const COUNTER_KEY = 'url:counter';
 const CACHE_TTL_SECONDS = 3600; // 1 hour
+const NEGATIVE_CACHE_TTL_SECONDS = 60; // short — don't hide a newly-created code for long
 const CACHE_PREFIX = 'shorturl:';
+const NULL_SENTINEL = '__NULL__'; // marks "we already checked, this doesn't exist"
 
 const generateShortCode = async () => {
   const nextId = await redisClient.incr(COUNTER_KEY); // atomic increment
@@ -24,6 +26,9 @@ export const createShortUrl = async (longUrl, customAlias = null) => {
     custom_alias: !!customAlias,
   });
 
+   // if this code was previously cached as "not found", clear that now that it exists
+  await redisClient.del(CACHE_PREFIX + shortCode);
+
   return url;
 };
 
@@ -32,13 +37,22 @@ export const getOriginalUrl = async (shortCode) => {
 
   // 1. Check Redis first
   const cachedUrl = await redisClient.get(cacheKey);
+
+  if (cachedUrl === NULL_SENTINEL) {
+    return null; // we already confirmed this doesn't exist — skip Mongo entirely
+  }
+
   if (cachedUrl) {
     return { long_url: cachedUrl, fromCache: true };
   }
 
   // 2. Cache miss - query MongoDB
   const url = await Url.findOne({ short_code: shortCode, is_active: true });
+
   if(!url) {
+    console.log('SETTING NEGATIVE CACHE FOR:', shortCode);
+    // negative cache — protects against repeated lookups for a code that doesn't exist
+    await redisClient.setEx(cacheKey, NEGATIVE_CACHE_TTL_SECONDS, NULL_SENTINEL);
     return null;
   }
 
