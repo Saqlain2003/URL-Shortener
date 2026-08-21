@@ -17,19 +17,25 @@ const generateShortCode = async () => {
   return encodeBase62(nextId);
 };
 
-export const createShortUrl = async (longUrl, customAlias = null) => {
+export const createShortUrl = async (longUrl, customAlias = null, userId = null, expiresAt = null) => {
   const shortCode = customAlias || await generateShortCode();
 
   const url = await Url.create({
     short_code: shortCode,
     long_url: longUrl,
     custom_alias: !!customAlias,
+    user_id: userId,
+    expires_at: expiresAt,
   });
 
    // if this code was previously cached as "not found", clear that now that it exists
   await redisClient.del(CACHE_PREFIX + shortCode);
 
   return url;
+};
+
+export const getUserUrls = async (userId) => {
+  return Url.find({ user_id: userId, is_active: true }).sort({ created_at: -1 });
 };
 
 export const getOriginalUrl = async (shortCode) => {

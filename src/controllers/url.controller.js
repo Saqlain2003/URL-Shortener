@@ -1,13 +1,14 @@
 import { createShortUrl,
          getOriginalUrl,
          updateUrl,
-         deactivateUrl } from '../services/url.service.js';
+         deactivateUrl,
+         getUserUrls } from '../services/url.service.js';
 import { recordClick, getAnalytics } from '../services/analytics.service.js';
 import { isValidUrl, isValidAlias } from '../utils/validators.js';
 
 export const shortenUrl = async (req, res) => {
   try {
-    const { longUrl, customAlias } = req.body;
+    const { longUrl, customAlias, expiresAt } = req.body;
 
     if (!longUrl) {
       return res.status(400).json({ error: 'longUrl is required' });
@@ -23,12 +24,31 @@ export const shortenUrl = async (req, res) => {
       });
     }
 
-    const url = await createShortUrl(longUrl, customAlias);
+    let parsedExpiry = null;
+    if (expiresAt) {
+      parsedExpiry = new Date(expiresAt);
+      if (isNaN(parsedExpiry.getTime()) || parsedExpiry <= new Date()) {
+        return res.status(400).json({ error: 'expiresAt must be a valid future date' });
+      }
+    }
+     const userId = req.user?.id || null; // populated by optionalAuth if token present
+
+    const url = await createShortUrl(longUrl, customAlias, userId, parsedExpiry);
     res.status(201).json({ shortCode: url.short_code, longUrl: url.long_url });
   } catch (error) {
     if (error.code === 11000) {
       return res.status(409).json({ error: 'Short code already exists' });
     }
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const getMyUrls = async (req, res) => {
+  try {
+    const urls = await getUserUrls(req.user.id);
+    res.status(200).json({ urls });
+  } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Internal server error' });
   }

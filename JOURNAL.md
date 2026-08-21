@@ -162,10 +162,17 @@ Req/Bytes counts sampled once per second.
 * Capture: timestamp, short_code, referrer, user-agent, rough geo from IP
 * Build GET /api/analytics/:shortCode endpoint to aggregate this data
 * Implemented ***Cache Penetration Fix***
+* Add JWT-based auth (signup/login)
+* Tie URLs to `user_id`
+* Add "my links" dashboard endpoint
+* Add expiration handling (a cron job(Soft Delete/Deactivate) or TTL index in Mongo(Hard Delete) to auto-deactivate expired links)
+
+Goal by end of day: Full CRUD is user-scoped and expiration works automatically.
 
 ## 🚧 Problems & Bugs Encountered:
 * **[Problem 1]:-** Showing empty count for non-existing URL instead of ***404 - Not Found***
 * **[Problem 2]:-** Non Existing URL searches cache and get miss, then searches DB and return 404. If 10000 simultaneously non existing URL is send, DB will crashed. ***[Cache Penetration]***
+* **[Problem 3]:-** Implementing MongoDB TTL Index will permanently delete the deactivated URL which changes the motive of keeping track of URL before deactivation
 
 ## 💡 Solutions & Learnings:
 * **[Solution 1]:-** Check DB if URL exist if not return ***404 - Not Found***
@@ -178,7 +185,29 @@ Req/Bytes counts sampled once per second.
 
 3. **Why createShortUrl now calls redisClient.del() on the new code:** this directly closes the edge case from point 2. The moment a URL is actually created, we proactively clear any stale negative cache entry for that exact code — so even within that 60-second window, a legitimate creation immediately becomes visible rather than waiting out the TTL.
 
-## 🧪 Test in Postman:
+* **[Solution 3]:-** Use Alternative CRON which will allow to do soft deactivate and we can keep the record of deactivated URLs.
+
+* **[Learned]:-** 
+1. **Why bcryptjs and not bcrypt:** bcrypt requires native compilation (node-gyp), which can be a pain on Windows specifically. bcryptjs is a pure-JS implementation, slightly slower, but zero compilation headaches. Worth knowing this tradeoff exists.
+
+2. **Why two versions of protect middleware instead of one:** your /shorten endpoint needs to support both logged-in users (tie the link to their account) and anonymous users (like it's worked all along). ***protect*** would incorrectly block anonymous users entirely. ***optionalAuth*** lets both cases through, but still populates req.user when a valid token is present. Routes like "my links" that make no sense without a logged-in user use protect instead.
+
+3. **Expiration Handling**
+
+    Here's something worth stopping on before I hand you code: MongoDB's TTL index only supports auto-deleting a document — it cannot set a field like is_active: false for you. That directly conflicts with the soft-delete philosophy we committed to on Day 4 (keep records for analytics/audit history, never hard-delete). So we have a real design decision here, not just an implementation detail.
+
+    ***Two legitimate options:***
+
+    * **Mongo TTL index** — simplest, but hard-deletes the document the moment it expires. You'd lose analytics history for that link forever.
+    * **A scheduled cron job** — checks for expired links periodically and soft-deactivates them (is_active: false), consistent with everything we've built so far, and it can also properly invalidate the Redis cache at the same time (a raw TTL index has no way to touch your Redis cache — it operates entirely inside MongoDB, silently, with no hook into your app code).
+
+    I'm going with the ***cron job approach*** — it's consistent with your existing soft-delete + cache-invalidation pattern, and it teaches you a genuinely useful pattern (scheduled background jobs) that TTL indexes don't.
+
+    ```bash
+        npm install node-cron
+    ```
+
+## 🧪 Test in Postman (Cache Penetration):
 1. **Test 1 — Confirm penetration protection works**  
 * **GET** http://localhost:5000/thisdoesnotexist123
 * **Expected:** 404
@@ -204,6 +233,81 @@ Req/Bytes counts sampled once per second.
 * **Then GET** http://localhost:5000/thisdoesnotexist123
 * **Expected:** this should now redirect successfully, not 404 — proving the negative cache was correctly invalidated on creation, even though the 60s TTL hadn't expired yet
 
+## 🧪 Test in Postman(User Auth & Cron):
+
+1. **POST** /api/auth/signup with { "email": "test@test.com", "password": "password123" } → expect 201 with a token
+2. **POST** /api/auth/login with same credentials → expect 201... wait, 200, with token
+3. **POST** /api/auth/login with wrong password → expect 401, generic "Invalid credentials"
+4. **POST** /shorten without an Authorization header → should still work anonymously (confirms optionalAuth doesn't block)
+5. **POST** /shorten with Authorization: Bearer **\<token>** from step 1 → create a link, then check MongoDB directly — user_id should be populated
+6. **GET** /api/urls/my without a token → expect 401
+7. **GET** /api/urls/my with a valid token → expect the array containing the link from step 5
+8. **POST** /shorten with { "longUrl": "https://example.com", "expiresAt": "2020-01-01" } (a past date) → expect 400
+9. **POST** /shorten with a near-future expiresAt (e.g., 2 minutes from now) → create it, then wait ~5-6 minutes for the cron job to run, then check that link's is_active in MongoDB — should have flipped to false automatically, and its Redis cache key should be gone  
+*  **👣 Steps for Point 9:**  
+    Postman request:
+
+* POST http://localhost:5000/shorten
+* Body:  
+    ```json
+        {
+        "longUrl": "https://example.com",
+        "expiresAt": "2026-08-21T10:05:00.000Z"
+        }
+    ```
+    **Important formatting note: use full ISO 8601 format (YYYY-MM-DDTHH:mm:ss.sssZ)** — this is what JavaScript's new Date() parses reliably. The trailing Z means UTC. If your local time is ahead/behind UTC (check your system timezone), account for that offset, or simplify by just asking Node to tell you the current time first:
+
+* Run this in your terminal to get an ISO string exactly 2 minutes from now, no manual math:
+    ```bash
+        node -e "console.log(new Date(Date.now() + 2*60*1000).toISOString())"
+    ```
+    Copy that output directly into expiresAt in your Postman body.
+
+* **Note the shortCode from the response**
+
+    Say it comes back as "shortCode": "k".
+
+* **Hit the redirect once:** 
+    ```text 
+        curl http://localhost:5000/j
+    ```
+    (or visit in browser/Postman with auto-redirect off) — this populates the cache
+
+* **Confirm it's cached and active right now**
+    ```bash
+        redis-cli
+        GET shorturl:k
+    ```
+* Should return the long URL (assuming you've hit the redirect once to populate cache) — or check Mongo directly to confirm is_active: true and expires_at is set correctly.
+
+* Wait for the cron job to run
+
+    Your cron job runs every 5 minutes (*/5 * * * *), on the clock — meaning it fires at :00, :05, :10, :15, etc., not 5 minutes after your server started. So depending on when you created the link, you might wait anywhere from a few seconds up to 5 minutes for the next scheduled run.
+
+    Watch your server terminal — when the job runs and finds your expired link, you should see:
+    ```text
+        Expired 1 link(s)
+    ```
+* **After that log appears, check Redis again**
+    ```bash
+        redis-cli
+        GET shorturl:k
+    ```
+    Expected: (nil) — confirms the cron job's redisClient.del() call correctly evicted it.
+
+* Confirm in MongoDB directly
+
+    Check the urls collection for that document (via Compass, Atlas UI, or mongosh):
+    ```javascript
+        db.urls.findOne({ short_code: "k" })
+    ```
+    Expected: is_active: false now, even though you never called the DELETE endpoint yourself.
+
+* Confirm the redirect now correctly 404s  
+    Expected: 404 { "error": "URL not found" } — proving the whole chain worked: expiry time passed → cron caught it → flipped is_active → cleared cache → redirect logic correctly rejects it.
 ## 🏆 Achievements & Results:
-✅ Successfully tested analytics route.
-✅ Implemented Cache Penetration Fix.
+✅ Successfully tested analytics route.  
+✅ Implemented Cache Penetration Fix.  
+✅ Full CRUD is User-based.  
+✅ Expiration is working automatically.  
+✅ Succesfully tested all User-based route and cron automated expiration handling.  
