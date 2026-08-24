@@ -5,7 +5,9 @@ import {
   deleteUrl,
   editUrl,
   getUrlAnalytics,
-  getMyUrls
+  getMyUrls,
+  getQrCode,
+  downloadQrCode
 } from '../controllers/url.controller.js';
 import { protect, optionalAuth } from '../middlewares/auth.middleware.js';
 import { rateLimiter } from '../middlewares/rateLimiter.middleware.js';
@@ -14,6 +16,8 @@ const router = Router();
 
 router.post('/shorten', rateLimiter, optionalAuth, shortenUrl);
 router.get('/api/urls/my', protect, getMyUrls);
+router.get('/api/qr/:shortCode', getQrCode);
+router.get('/api/qr/:shortCode/download', downloadQrCode);
 router.delete('/urls/:shortCode', deleteUrl);
 router.put('/urls/:shortCode', editUrl);
 router.get('/api/analytics/:shortCode', getUrlAnalytics); // must stay ABOVE the catch-all below

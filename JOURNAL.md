@@ -317,11 +317,13 @@ Req/Bytes counts sampled once per second.
 
 ## 🎯 Goal for Today:
 * ***Add Rate Limiter & Simulate Horizontal Scaling***
+* ***Generate QR Code for better visuals***
 
 ## ✅ What I Implemented / Built:
 * Add rate limiting (per-IP or per-user) using Redis
 * Simulate horizontal scaling locally: run 2 Node instances behind a simple load balancer (Nginx or even just two ports + a basic round-robin proxy) to feel what "stateless service" means
 * Add basic health-check endpoint for readiness/liveness
+* QR Code generation on Demand
 
 ## 🚧 Problems & Bugs Encountered:
 * **[Problem 1]:-** Nginx redirecting all request to Server 2 (i.e. PORT 5001) only
@@ -414,6 +416,33 @@ Req/Bytes counts sampled once per second.
 
     **Why proxy_set_header X-Real-IP and X-Forwarded-For matter here specifically:** remember your rate limiter uses req.ip. Without these headers, every request arriving at your Node instances would show Nginx's own IP (127.0.0.1) as the source — meaning your rate limiter would treat all users as one single IP and rate-limit everyone together incorrectly. With trust proxy: true already set in your app.js from Day 5, Express will correctly read the real client IP from these forwarded headers instead.
 
+* **[Decision]:-** Design decision first
+
+    **Where should the QR code live — generated on-demand at request time, or generated once and cached?** Generate on-demand, don't store it. A QR code is just a deterministic visual encoding of the short URL string — there's nothing to compute expensively or cache, and storing a QR image file per URL would be unnecessary storage overhead for something regenerable in milliseconds from data you already have.
+
+    ```bash
+        npm install qrcode
+    ```
+* **[Learned 5]:-** 
+    * **Why toDataURL and not saving a .png file to disk:** a Data URL (data:image/png;base64,...) can be sent directly in a JSON API response and rendered straight into an \<img src=""> tag on the frontend with zero extra requests, zero file storage, zero cleanup needed. Writing to disk would mean managing a filesystem of images, serving them as static files, and cleaning them up when URLs get deleted — real complexity for something that takes a few milliseconds to regenerate on demand.
+
+    * **Why errorCorrectionLevel: 'M':** QR codes support 4 levels of error correction (L, M, Q, H) — a tradeoff between how much damage/obstruction the code can survive versus how dense/complex the pattern becomes. M (~15% recovery) is the standard middle ground used by most real products — good enough to survive a bit of screen glare or minor print smudging, without generating an unnecessarily dense pattern the way H would.
+
+    * **Why check existence first instead of just generating a QR for any code:** without this check, someone could request a QR code for a short code that was never created, and you'd hand back a perfectly valid-looking QR code that leads nowhere. Small thing, but it's the difference between an API that validates its inputs and one that doesn't.
+
+    📊 **The 4 Error Correction Levels**  
+    There are four standardized levels. Choosing a higher level makes the QR code more durable but adds more modules (blocks), making the pattern denser.  
+    
+    ### 📊 QR Code Error Correction Levels
+
+    | Level | Error Recovery Capacity | Density | Best Use Case |
+    | :---: | :---------------------: | :-----: | :------------ |
+    | **L** | Recovers up to **7%**   | Low     | Digital screens and clean print layouts |
+    | **M** | Recovers up to **15%**  | Medium  | Standard marketing, flyers, and receipts *(Default)* |
+    | **Q** | Recovers up to **25%**  | High    | Surfaces prone to smudging, bending, or weather |
+    | **H** | Recovers up to **30%**  | Maximum | Custom designs with an embedded logo in the center |
+
+
 ## 🧪 Test in Postman (Rate Limiting):
 * Hit **GET** /shorten 21+ times quickly (Postman Runner, or just spam-click Send) — the 21st should return 429.
 
@@ -425,3 +454,28 @@ This is exactly what an Nginx/load balancer would check before deciding whether 
 
 ## 🧪 Test in Postman (Nginx Round-Robin Distribution):
 Hit http://localhost:8080/health/live repeatedly (Postman, spam Send, or a quick loop) — you should see the port field alternate between 5000 and 5001. That alternation is Nginx round-robining your requests across two independent, identical processes — this is horizontal scaling, made visible.
+
+## 🧪 Test in Postman (QR Generation and Download):
+**Test 1 — Get QR as JSON/base64**
+
+* GET http://localhost:5000/api/qr/<yourShortCode>
+* Expected: 200 with { "shortCode": "...", "qrCode": "data:image/png;base64,..." }
+* To actually see it: copy the full qrCode value, paste it into your browser's address bar, hit enter — it should render as an image
+
+**Test 2 — Get QR for non-existent code**
+
+* GET http://localhost:5000/api/qr/doesnotexist
+* Expected: 404
+
+**Test 3 — Download as direct PNG**
+
+* GET http://localhost:5000/api/qr/<yourShortCode>/download
+* In Postman, don't click "Send" normally — click the dropdown arrow next to Send and choose "Send and Download", or just paste the URL directly into a browser tab
+* Expected: an actual QR code image renders/downloads
+* Scan it with your phone — this is the real end-to-end test — it should open your short URL and redirect correctly
+
+## 🏆 Achievements & Results:
+✅ Understand what "stateless" buys and why it's a prerequisite for horizontal scaling  
+✅ Successfully simulated Horizontal scaling  
+✅ Used Nginx as Load Balancer  
+✅ Implemented QR Generation & Download

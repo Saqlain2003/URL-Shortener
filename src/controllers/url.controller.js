@@ -2,7 +2,9 @@ import { createShortUrl,
          getOriginalUrl,
          updateUrl,
          deactivateUrl,
-         getUserUrls } from '../services/url.service.js';
+         getUserUrls,
+         generateQrCode,
+         generateQrCodeBuffer } from '../services/url.service.js';
 import { recordClick, getAnalytics } from '../services/analytics.service.js';
 import { isValidUrl, isValidAlias } from '../utils/validators.js';
 
@@ -127,6 +129,44 @@ export const editUrl = async (req, res) => {
     }
 
     res.status(200).json({ shortCode: url.short_code, longUrl: url.long_url });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const getQrCode = async (req, res) => {
+  try {
+    const { shortCode } = req.params;
+
+    // confirm the short URL actually exists before generating a QR for it
+    const urlExists = await getOriginalUrl(shortCode);
+    if (!urlExists) {
+      return res.status(404).json({ error: 'Short URL not found' });
+    }
+
+    const qrCode = await generateQrCode(shortCode);
+    res.status(200).json({ shortCode, qrCode });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const downloadQrCode = async (req, res) => {
+  try {
+    const { shortCode } = req.params;
+
+    const urlExists = await getOriginalUrl(shortCode);
+    if (!urlExists) {
+      return res.status(404).json({ error: 'Short URL not found' });
+    }
+
+    const buffer = await generateQrCodeBuffer(shortCode);
+
+    res.set('Content-Type', 'image/png');
+    res.set('Content-Disposition', `inline; filename="${shortCode}-qr.png"`);
+    res.send(buffer);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Internal server error' });

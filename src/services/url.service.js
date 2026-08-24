@@ -99,3 +99,24 @@ export const updateUrl = async (shortCode, newLongUrl) => {
   return url;
 };
 
+export const generateQrCode = async (shortCode) => {
+  const shortUrl = `${process.env.BASE_URL}/${shortCode}`;
+
+  const qrDataUrl = await QRCode.toDataURL(shortUrl, {
+    errorCorrectionLevel: 'M',
+    margin: 2,
+    width: 300,
+  });
+
+  return qrDataUrl;
+};
+
+export const generateQrCodeBuffer = async (shortCode) => {
+  const shortUrl = `${process.env.BASE_URL}/${shortCode}`;
+  const buffer = await QRCode.toBuffer(shortUrl, {
+    errorCorrectionLevel: 'M',
+    margin: 2,
+    width: 300,
+  });
+  return buffer;
+};
