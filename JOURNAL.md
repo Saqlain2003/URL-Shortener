@@ -167,8 +167,6 @@ Req/Bytes counts sampled once per second.
 * Add "my links" dashboard endpoint
 * Add expiration handling (a cron job(Soft Delete/Deactivate) or TTL index in Mongo(Hard Delete) to auto-deactivate expired links)
 
-Goal by end of day: Full CRUD is user-scoped and expiration works automatically.
-
 ## 🚧 Problems & Bugs Encountered:
 * **[Problem 1]:-** Showing empty count for non-existing URL instead of ***404 - Not Found***
 * **[Problem 2]:-** Non Existing URL searches cache and get miss, then searches DB and return 404. If 10000 simultaneously non existing URL is send, DB will crashed. ***[Cache Penetration]***
@@ -311,3 +309,119 @@ Goal by end of day: Full CRUD is user-scoped and expiration works automatically.
 ✅ Full CRUD is User-based.  
 ✅ Expiration is working automatically.  
 ✅ Succesfully tested all User-based route and cron automated expiration handling.  
+<br>
+<br>
+<br>
+
+# [DATE: 24 AUG 2026] 
+
+## 🎯 Goal for Today:
+* ***Add Rate Limiter & Simulate Horizontal Scaling***
+
+## ✅ What I Implemented / Built:
+* Add rate limiting (per-IP or per-user) using Redis
+* Simulate horizontal scaling locally: run 2 Node instances behind a simple load balancer (Nginx or even just two ports + a basic round-robin proxy) to feel what "stateless service" means
+* Add basic health-check endpoint for readiness/liveness
+
+## 🚧 Problems & Bugs Encountered:
+* **[Problem 1]:-** Nginx redirecting all request to Server 2 (i.e. PORT 5001) only
+
+## 💡 Solutions & Learnings:
+* **[Solution]:-** I am using servers on PORT 5000 and 5001 but in ***nginx.conf***, I have written server PORT 50001 and sever 5002
+* **[Learned 1]:-**   
+   * **This is the fixed-window algorithm — understand its real tradeoff, not just that it "works":** it resets the count entirely every 60 seconds, which means a user could send 20 requests at :00:59 and another 20 at :01:01 — 40 requests in 2 seconds, right at the window boundary. The more accurate approach is a ***sliding window*** log using Redis sorted sets (store a timestamp per request, count how many fall within the last 60 seconds on every check). Fixed-window is what most real systems actually use anyway, because it's cheap (one key, one INCR) versus the extra memory/computation of sorted sets — the boundary-burst edge case is usually an acceptable tradeoff. Good to know both exist and why teams pick the cheaper one.
+
+   * **Also notice catch calls next() instead of blocking** — this is called "failing open." If Redis itself goes down, you have a choice: block all traffic (fail closed, "safe" but takes your whole app down when Redis has a hiccup) or let traffic through unlimited temporarily (fail open, "available" but briefly unprotected). For a rate limiter specifically, most production systems fail open — losing rate-limiting protection for a few seconds during a Redis blip is a much smaller problem than your entire API going down because of it.
+
+* **[Learned 2]:-** Health Checks (liveness vs readiness — real standard, not just "one /health route")
+
+    This distinction matters in real orchestrated systems (Kubernetes, load balancers): liveness asks "is the process alive at all?" — if this fails, the process should be restarted. Readiness asks "is this instance actually able to serve traffic right now?" — if this fails, a load balancer should stop sending it requests, but not necessarily restart it (e.g., it's still booting, or its DB connection just dropped temporarily).
+
+* **[Learned 3]:-** 
+    * **Important — both instances share the same MongoDB and Redis.** This is the actual point: the data layer is shared and centralized, but the application layer (Node processes) are now duplicated and independent. This is exactly what ***"stateless service"*** means in practice — neither Node instance holds any unique state in memory; all real state (URLs, cache, rate-limit counters) lives in shared external stores. That's precisely why you can run 2, 20, or 200 identical copies and it just works.
+
+    *  **👣 Steps for Enabling 2 nodes:**  
+    1. Start server in 1st Terminal using:  
+
+        ```bash
+            npm run dev
+        ```
+    2. Leave the first one running, open new terminal:
+
+        ```bash
+            PORT=5001 npx nodemon server.js
+        ```
+* **[Learned 4]:-** Nginx Load Balancer
+    *  **👣 Steps for Setup Nginx**
+
+    1. **Download and Extract:**  
+    * Open your browser and go to the official website: nginx.org/en/download.html.
+    * Look under the Mainline version or Stable version section.
+    * Click the nginx/Windows-x.xx.x link to download the .zip file.
+    * Extract the .zip file to a folder of your choice (e.g., C:\nginx).
+
+    2. **Configure for Your 2 Node Instances:**  
+    Before running Nginx, you need to tell it to split traffic between your two Node.js processes (Port 5000 and Port 5001).
+    * Open the extracted folder and navigate to the conf directory.
+    * Open the nginx.conf file in a text editor (like Notepad or VS Code).
+    * Replace the contents of the file with this basic load-balancing configuration:
+    ```text 
+            events {
+            worker_connections 1024;
+            }
+
+            http {
+                upstream url_shortener_backend {
+                    server localhost:5000;
+                    server localhost:5001;
+                }
+
+                server {
+                    listen 8080;
+
+                    location / {
+                        proxy_pass http://url_shortener_backend;
+                        proxy_set_header Host $host;
+                        proxy_set_header X-Real-IP $remote_addr;
+                        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                    }
+                }
+            }
+    ```
+
+    * Save and close file
+
+    3. **Run Nginx:**
+    * Open Command Prompt (cmd) as an Administrator.
+    * Navigate to your Nginx folder:
+
+        ```cmd
+            cd C:\nginx
+        ```
+    * Start Nginx by running:
+
+        ```cmd
+            start nginx
+        ```
+        (Note: A command window might flash quickly and disappear. This is normal; Nginx runs quietly in the background).
+    
+    🛑 **Managing the Nginx Process**  
+        Because Nginx runs in the background, you control it using these specific commands from inside your C:\nginx folder:
+    * Check if it is running: Open your browser and go to http://localhost. If it works, Nginx is successfully forwarding to your Node app.
+    * Stop Nginx immediately: nginx -s stop
+    * Graceful shutdown: nginx -s quit
+    * Reload configuration (after making changes to nginx.conf): nginx -s reload
+
+    **Why proxy_set_header X-Real-IP and X-Forwarded-For matter here specifically:** remember your rate limiter uses req.ip. Without these headers, every request arriving at your Node instances would show Nginx's own IP (127.0.0.1) as the source — meaning your rate limiter would treat all users as one single IP and rate-limit everyone together incorrectly. With trust proxy: true already set in your app.js from Day 5, Express will correctly read the real client IP from these forwarded headers instead.
+
+## 🧪 Test in Postman (Rate Limiting):
+* Hit **GET** /shorten 21+ times quickly (Postman Runner, or just spam-click Send) — the 21st should return 429.
+
+## 🧪 Test in Postman (Health Check)
+* **GET** /health/live → always 200 if server's up. 
+* **GET** /health/ready → 200 normally; 
+* Stop your Redis server and hit it again → should flip to 503 with redis: false.  
+This is exactly what an Nginx/load balancer would check before deciding whether to route traffic to an instance.
+
+## 🧪 Test in Postman (Nginx Round-Robin Distribution):
+Hit http://localhost:8080/health/live repeatedly (Postman, spam Send, or a quick loop) — you should see the port field alternate between 5000 and 5001. That alternation is Nginx round-robining your requests across two independent, identical processes — this is horizontal scaling, made visible.

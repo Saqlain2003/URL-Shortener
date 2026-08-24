@@ -1,6 +1,7 @@
 import Url from '../models/Url.js';
 import redisClient from '../config/redis.js';
 import { encodeBase62 } from '../utils/base62.js';
+import QRCode from 'qrcode';
 // import { customAlphabet } from 'nanoid';        No need for nanoid anymore since we are using Redis counter + Base62 for unique short codes
 
 // temporary generator — Day 2 replaces this with Redis counter + Base62
@@ -97,3 +98,4 @@ export const updateUrl = async (shortCode, newLongUrl) => {
 
   return url;
 };
+
