@@ -479,3 +479,12 @@ Hit http://localhost:8080/health/live repeatedly (Postman, spam Send, or a quick
 ✅ Successfully simulated Horizontal scaling  
 ✅ Used Nginx as Load Balancer  
 ✅ Implemented QR Generation & Download
+<br>
+<br>
+<br>
+
+# [DATE: 25 AUG 2026] 
+
+## 🎯 Goal for Today:
+* ***Integrating Automated tests & CI***
+

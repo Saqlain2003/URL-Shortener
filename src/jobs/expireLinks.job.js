@@ -4,24 +4,28 @@ import redisClient from '../config/redis.js';
 
 const CACHE_PREFIX = 'shorturl:';
 
+// the actual logic, now directly testable without waiting for a real schedule
+export const runExpirationCheck = async () => {
+  const expiredUrls = await Url.find({
+    expires_at: { $lte: new Date() },
+    is_active: true,
+  });
+
+  for (const url of expiredUrls) {
+    url.is_active = false;
+    await url.save();
+    await redisClient.del(CACHE_PREFIX + url.short_code);
+  }
+
+  return expiredUrls.length;
+};
+
 export const startExpirationJob = () => {
   // runs every 5 minutes
   cron.schedule('*/5 * * * *', async () => {
     try {
-      const expiredUrls = await Url.find({
-        expires_at: { $lte: new Date() },
-        is_active: true,
-      });
-
-      if (expiredUrls.length === 0) return;
-
-      for (const url of expiredUrls) {
-        url.is_active = false;
-        await url.save();
-        await redisClient.del(CACHE_PREFIX + url.short_code);
-      }
-
-      console.log(`Expired ${expiredUrls.length} link(s)`);
+      const count = await runExpirationCheck();
+      if (count > 0) console.log(`Expired ${count} link(s)`);
     } catch (error) {
       console.error('Expiration job failed:', error.message);
     }
