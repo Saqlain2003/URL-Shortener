@@ -1,3 +1,4 @@
+![CI](https://github.com/<your-username>/url-shortener/actions/workflows/ci.yml/badge.svg)
 # [URL Shortener]
 
 ![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)

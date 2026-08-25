@@ -486,5 +486,246 @@ Hit http://localhost:8080/health/live repeatedly (Postman, spam Send, or a quick
 # [DATE: 25 AUG 2026] 
 
 ## 🎯 Goal for Today:
-* ***Integrating Automated tests & CI***
+* ***Integrating Automated tests & CI workflows***
 
+## ✅ What I Implemented / Built:
+* Implements Unit Tests & Integration Tests via ***Vitest*** Testing Framework
+* Use a separate test MongoDB database (spun up fresh for each test run, e.g., via mongodb-memory-server which runs an in-memory Mongo instance just for tests — no real DB needed, fast, isolated)
+* Wire them into GitHub Actions so they run automatically on every push via CI workflows
+
+## 🚧 Problems & Bugs Encountered:
+* **[Decision Problem 1]:- Which database to choose for testing?**  
+    **Details:- The core problem tests create:** tests need to create, modify, and delete data to verify your code works — but you don't want that happening in the same database that holds your real (or real-feeling) development data. Imagine running your test suite and it deletes the URL you were manually testing in Postman five minutes ago, or worse, if this were production, actually deletes real user data. Tests need their own separate, disposable database.
+
+* **[Decision Problem 2]:-** **What about Redis in tests?**  
+    **Details:- Similar problem, similar solution needed. We have two choices:** mock Redis calls entirely (fake the responses in test code, no real Redis needed) or run a real lightweight Redis in CI too. 
+
+* **[Problem 3]:-** Redirect controller calls ***recordClick(...)*** without *await*, deliberately (that's the whole fire-and-forget point from Day 4). But that creates a genuine testing problem: if a test hits the redirect, then immediately checks the analytics endpoint, the background write might not have finished yet — causing the test to fail unpredictably, not because your code is wrong, but because the test checked too early. This is a real, common category of test flakiness worth knowing by name: ***a race condition*** in the test itself.
+
+* **[Problem 4]:-** Testing [cron.schedule('*/5 * * * *', callback)] directly would mean either **waiting 5 real minutes** in your test suite (unacceptable) or reaching into cron internals to fake time (fragile, overly complex for what we're trying to prove).
+
+* **[Bug 1]:-** **Duplicate alias test: expected 201 to be 409**
+
+    This one's a **genuine race condition** in test setup, not a bug in your app code. Here's what's actually happening: Mongoose builds indexes (like the unique index on short_code) asynchronously, in the background, after you connect. In your real dev environment, this has always had plenty of time to finish before you ever hit the API — you connect, wait, then start testing manually in Postman. But in the test suite, we connect and immediately start firing requests, so the very first "duplicate alias" test can race ahead of index creation — meaning MongoDB hasn't actually started enforcing uniqueness yet when the second insert happens, so it succeeds when it should have failed.
+
+## 💡 Solutions & Learnings:
+* **[2 Options]:-**  
+    **Option A — A separate real MongoDB database**
+
+    * You'd point your test config at, say, mongodb://localhost:27017/urlshortener_test instead of urlshortener. Still a real, persistent MongoDB — just a different database name so it doesn't collide with your dev data.
+
+    * **Pros:** Simple to understand, behaves identically to production Mongo, no new tooling  
+
+    * **Cons:** You have to remember to clean it up between test runs (delete all documents before/after each test, or you'll get false failures from leftover data), it's slower (real disk I/O), and if you ever run tests on a different machine (like CI, which we're doing next), that machine needs its own MongoDB installed and running  
+
+    **Option B — mongodb-memory-server (in-memory, temporary)**
+
+    * This spins up a real MongoDB binary, but running entirely in RAM, fresh and empty, only for the duration of your test run — then it's destroyed completely when tests finish. No files touched on disk, no real server needed running beforehand.
+
+    * **Pros:** Every test run starts from a guaranteed-clean, empty database — no leftover data ever causes a false pass/fail. Much faster (RAM, not disk). Critically: this is what makes CI possible without extra setup — GitHub Actions doesn't have your local MongoDB installed, but this package downloads and runs its own temporary Mongo binary automatically, so tests work identically on your machine and in CI with zero extra configuration  
+
+    * **Cons:** Slightly more setup complexity upfront (a test setup/teardown file), and the very first time it runs, it downloads a MongoDB binary (~100MB), which takes a few extra seconds once
+
+* **[My Choice]:-** **Option B** ***(mongodb-memory-server)***
+
+* **[Reason 1]:-** **Option A** would require us to also configure a MongoDB service inside your GitHub Actions workflow — extra YAML, another moving part to get wrong. **Option B** sidesteps that complexity entirely and is genuinely the more common real-world choice for exactly this reason.
+
+* **[My Choice & Reason 2]:-** Given my code calls Redis in several places (caching, rate limiting, ID generation), I'd lean toward *mocking Redis* for unit/integration tests rather than spinning up a real instance — *it keeps tests fast and avoids a second piece of test infrastructure*. I'll show exactly how when we get to the integration tests.
+
+* **[Learned 1]:-** 
+    ```bash
+        npm install -D vitest supertest mongodb-memory-server
+    ```
+    **What each does:** **vitest** is the test runner itself. **supertest** lets you make fake HTTP requests directly against your Express app in tests, without actually starting a server on a port. **mongodb-memory-server** gives you the disposable in-memory MongoDB we just discussed.
+
+* **[Learned 2]:-** 
+    * **Notice something important about the javascript:** and file:// test I just added: go back and check your actual isValidUrl function. Does it actually reject those? If you followed the earlier implementation exactly, it should — we checked parsed.protocol === 'http:' || parsed.protocol === 'https:' — but this is a great example of why tests matter: this test would have caught the open-redirect vulnerability from security gaps list if that validation had been missing or broken. That's the real value of tests — not proving code works, but catching when it silently stops working.
+
+    * Node's built-in URL class parses any string with a protocol scheme, including non-http ones:
+
+        ```javascript
+            new URL('javascript:alert(1)').protocol // → 'javascript:'
+            new URL('file:///etc/passwd').protocol  // → 'file:'    
+        ```
+
+        Since your check is parsed.protocol === 'http:' || parsed.protocol === 'https:', both of those evaluate to false and get rejected. The URL constructor doesn't throw on these — it happily parses them — so the protocol check specifically is the thing doing the rejecting, not a parse failure. That's exactly why the test is meaningful: if someone later "simplified" this function and accidentally dropped the protocol check (kept only try { new URL(x) } catch { return false }), the test would fail immediately and loudly, whereas the bug itself would be silent and easy to miss in a code review.
+
+* **[Learned 3]:- ** **Why afterEach clears data but afterAll tears down the whole server:** each individual test should start from a clean slate (no leftover documents from the previous test silently causing a false pass or fail), but you don't want to pay the cost of spinning up/tearing down the entire in-memory Mongo server for every single test — that would be slow. One server for the whole file, wiped clean between tests.
+
+* **[Learned 4]:-** 
+    * **Why vi.mock('../config/redis.js', ...) with a fake in-memory Map:** rather than connecting to a real Redis, we're substituting your actual Redis client with a fake object that mimics its interface (get, setEx, del, incr) but stores everything in a plain JavaScript Map in memory. Your service code has no idea it's talking to a fake — it calls redisClient.get(...) exactly the same way either way. This is the core idea of mocking: replace a real dependency with a fake that behaves the same way for the purposes of this test, so you can test your logic in isolation from Redis's correctness (which isn't what you're trying to verify here).
+
+    * **Why the dynamic await import('../app.js') instead of a normal top-level import:** this is a subtle but important ordering issue. Your app.js imports routes, which import controllers, which import services, which import redis.js directly at the top of the file. If we used a normal import app from '../app.js' at the top of this test file, JavaScript would resolve that import chain before vi.mock has a chance to intercept it, and your real Redis client would get imported instead of the mock. The dynamic await import(...) after vi.mock(...) guarantees the mock is registered first.
+
+* **[Learned 5]:-** 
+    * **Unit Testing:-** Unit testing is a software development practice where the smallest testable parts of an application, called units (such as functions, methods, or classes), are checked individually and in isolation to ensure they work correctly.
+    
+    * **How Unit Testing Works: The AAA Pattern:-** Developers structure most unit tests using the Arrange, Act, Assert (AAA) pattern to keep tests clean and readable:
+        * Arrange: Set up the test conditions and inputs.
+        * Act: Execute the specific function or code block being tested.
+        * Assert: Verify if the actual output matches the expected result
+
+    * **Mocks:-** A mock is a fake object used in software testing to simulate the behavior of real, complex dependencies.When you write a unit test, your code must be isolated.  
+        * If the code you are testing relies on an external system—like a database, an external API, or the computer's file system—you replace that system with a mock. The mock mimics the real object by returning predetermined data, allowing you to test your code without making actual network or database calls.
+
+        * 🎭 **Real-World Analogy** Think of a mock like a crash test dummy used by car manufacturers.To test if an airbag deploys correctly, engineers don't put a real human in the driver's seat. Instead, they use a dummy that mimics a human's weight and shape. The dummy provides the necessary environment for the test without the risk, cost, or complexity of using a real person.
+    
+    * **When to use Unit Testing and Integration Testing**  
+    *The actual decision rule for unit vs. integration*
+
+        Here's the concrete rule, not just examples:
+
+        **Ask:** does this function touch anything outside itself — a database, a cache, the filesystem, the network, the system clock, randomness?
+
+        * **No →** unit test. Fast, no setup, tests pure logic.  
+        * **Yes →** integration test (or you'd have to mock every single dependency, which usually isn't worth it once there's more than one).
+
+        Applying it to your actual codebase:
+
+        
+
+        | Component / Function | External State? | Dependencies / Description | Test Type |
+        | :--- | :---: | :--- | :--- |
+        | **encodeBase62 / decodeBase62** | **No** | Pure algorithmic logic | Unit |
+        | **isValidUrl / isValidAlias** | **No** | Validation rules only | Unit |
+        | **createShortUrl** | **Yes** | MongoDB write, Redis cache | Integration |
+        | **getOriginalUrl** | **Yes** | MongoDB read, Redis cache | Integration |
+        | **hashPassword / comparePassword** | **No** | Pure crypto function *(Pending)* | Unit |
+        | **generateToken / verifyToken** | **No** | Touches `process.env` only *(Pending)* | Unit |
+        | **recordClick** (analytics) | **Yes** | MongoDB write, GeoIP lookup | Integration |
+        | **Full POST `/shorten` flow** | **Yes** | Express HTTP request/response | Integration |
+        | **Expiration cron job** | **Yes** | MongoDB query, Redis delete *(Time-based)* | Integration |
+    
+* **[Learned 6]:-** **Types of Testings**  
+    🧱 **1. The Core Functional Levels (The Testing Pyramid)**    
+    These tests verify what the system does, ensuring the software meets business requirements. They are typically structured from the narrowest code level to the entire user experience.  
+    
+    * **Unit Testing:** Validates the smallest testable components (methods or classes) in complete isolation.
+    * **Integration Testing:** Verifies that multiple modules or units interact with each other correctly.
+    * **System Testing:** Evaluates the complete, fully integrated software to ensure it satisfies requirements.
+    * **Acceptance Testing:** Performed by end-users or clients to confirm if the system is ready for production.
+
+    🛡️ **2. Non-Functional Testing**  
+    These tests verify how the system performs, focusing on operational attributes rather than specific business logic.
+    
+    * **Performance Testing:** Checks system responsiveness, scalability, and stability under a specific workload.
+    * **Load Testing:** Measures how the application behaves under expected real-life heavy usage.* **Stress Testing:** Pushes the software beyond its limits to see where and how it breaks.   
+    * **Security Testing:** Identifies vulnerabilities, threats, and risks to protect application data.
+    * **Usability Testing:** Evaluates how user-friendly and intuitive the application's interface is.
+
+    🔄 **3. Change-Related Testing**  
+    These types of testing occur after developers modify the existing codebase.
+    
+    * **Regression Testing:** Re-runs existing tests to ensure that new code changes haven't broken working features.
+    * **Smoke Testing:** Runs a quick set of basic tests on a new build to check if the app is stable enough to test further.
+    * **Sanity Testing:** Concentrates narrowly on validating a specific bug fix or a minor functional update.
+
+    👁️ **4. Structural Perspective Testing**  
+    These approaches define how much visibility the tester has into the underlying source code.
+    
+    * **Black-Box Testing:** Testing the software without any knowledge of its internal code structure or logic.
+    * **White-Box Testing:** Testing with full access to the source code, internal paths, and system design.
+    * **Grey-Box Testing:** A hybrid approach where the tester has partial knowledge of the internal structures.
+
+* **[Solution 3]:-** The pragmatic fix for a fire-and-forget write like this is a **tiny artificial delay** in the test to let the background write complete before asserting on it:
+    * The **wait(100)** line: this is a real compromise, not an elegant solution — 100ms is usually plenty on a fast local machine, but on a slower CI runner it's theoretically possible for it to still be too short, causing an occasional flaky failure. The more robust production fix would be to make recordClick testable independently (e.g., export it and await it directly in a separate, more targeted test, rather than going through the full HTTP + fire-and-forget path) — but for the goal of "test the real user-facing behavior end-to-end," this tradeoff is a reasonable, honest one to accept and document, which is exactly what I'm doing by explaining it to you now rather than hiding it.
+
+* **[Solution 4]:-** The clean fix: separate "what the job does" from "when the job runs."
+    * This refactor is a genuinely important lesson, worth internalizing beyond just this project: code wrapped inside a scheduler, a route handler, or an event listener is much harder to test directly. Pulling the actual logic out into its own plain, exported function — one that the scheduler merely calls — makes it trivially testable in isolation, while the production behavior is completely unchanged. This same pattern applies everywhere: prefer thin route handlers / thin schedulers that delegate to plain, testable functions.
+
+* **[Bug Fix 1]:-** **Explicitly wait for indexes to finish building in your test setup**
+    * **Why this specific fix, and not something simpler:** **Model.init()** is Mongoose's own documented way to return a promise that resolves once that model's indexes are fully built — it's the correct tool here, not a workaround. This is also a genuinely useful thing to now know for production: the exact same race condition could theoretically bite you on a fresh production deploy too, if your app starts accepting traffic before Mongoose finishes building indexes on a brand new database. Good bug to have caught here, in tests, rather than in production.
+
+* **[Understanding CI File]:-** **Walking through each piece, since this is my first CI file:**
+
+    * **on: push / pull_request —** This defines when the workflow runs: every push to *main*, and every PR targeting *main*. The PR trigger is the more important one in practice — it means if you (or a future collaborator) open a PR with broken code, GitHub shows a red ❌ right on the PR before anyone merges it, not after.
+    
+    * **runs-on: ubuntu-latest —** GitHub spins up a fresh, throwaway Ubuntu virtual machine for this job. This is genuinely a fresh machine — no MongoDB, no Redis, no Node, nothing pre-installed. It's the actual proof that your test setup is properly self-contained, since it has to install everything from scratch and it still has to pass.
+    
+    * **actions/checkout@v4 —** pulls your actual repo code onto that fresh VM. Without this, there's no code to test at all.
+
+    * **cache: 'npm' —** caches your *node_modules* between runs based on your *package-lock.json*. Without this, every single CI run would redownload every npm package from scratch, which is slow and wasteful. This is a real optimization worth understanding, not just a nice-to-have.
+
+    * **npm ci, not npm install —** this is an intentional, important distinction. *npm ci (clean install)* deletes any existing *node_modules*, installs exactly what's locked in *package-lock.json*, and — critically — fails outright if *package.json and package-lock.json* are out of sync, rather than silently updating the lockfile the way *npm install* would. This is the standard for CI specifically because you want a guaranteed, reproducible install, not one that might quietly drift.
+
+    * **env: JWT_SECRET: ci-test-secret —** remember your auth integration tests need *process.env.JWT_SECRET* to exist. Your local *.env* file isn't committed to git (it shouldn't be — more on that below) and doesn't exist on this fresh VM at all. This line explicitly provides that one variable directly to the CI job.
+
+    * **No MongoDB or Redis setup step, on purpose —** this is the actual payoff of the architecture decisions we made earlier in the session. *mongodb-memory-server* downloads and runs its own disposable Mongo binary automatically, and Redis is fully mocked in every test file. If we'd gone with "Option A" (a real separate test database) back when I asked you to choose, this workflow file would need an extra *services:* block spinning up real MongoDB and Redis containers just for CI. You're seeing the direct benefit of that earlier choice right now.
+
+## 🧪 Test before CI:
+1. After Installing vitest, supertest & mongodb-memory-server add following to your package.json:
+
+    ```text
+        "scripts": {
+        "test": "vitest run",
+        "test:watch": "vitest"
+    },
+    ```
+
+2.  ```bash
+        npm test
+    ```
+
+## 🧪 Test after writing ci.yml:
+
+1.  ```bash
+        git add .
+        git commit -m "Add CI workflow and automated test suite"
+        git push
+    ```
+
+2.  Open Github, Go to Action tab and see automation test running. All the should pass.
+
+## 🧪 Test for Intentional failing Pipeline to see CI transition:
+
+🛑 **Step 1: Break the Code Locally**
+1. Locate your URL validation function (e.g., isValidUrl).
+2. Temporarily break it by removing the https check. For example, change it to:
+
+    ```javascript
+        // Temporarily broken code
+        return parsed.protocol === 'http:'; // removed the 'https:' check
+    ```
+3. Save the file.
+
+📤 **Step 2: Push the Broken Code to GitHub**   
+* Open your terminal and run these commands to send the intentional bug to your repository:
+
+    ```bash 
+        git add .
+        git commit -m "Test: Intentionally breaking URL validation to test CI pipeline"
+        git push
+    ```
+
+📊 **Step 3: Watch the Pipeline Turn Red** 🔴  
+1. Open your web browser and go to your **GitHub repository**.
+2. Click on the **Actions** tab at the top.
+3. You will see a new workflow run running (indicated by a yellow spinning circle).
+4. Wait about 30 to 60 seconds. The circle will turn into a **Red Cross (❌)**, meaning the build failed.
+5. Click on that specific workflow run, then click on the failed job (usually named something like test-and-build or build).
+6. Expand the log lines for the **test execution step**. You will see the exact assertion failure showing that your HTTPS test cases failed.
+
+🛠️ **Step 4: Revert the Code (Fix it)**  
+Go back to your code editor and fix the function so it works correctly again.
+1. Restore the https check:
+
+    ```javascript
+        // Fixed code
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    ```
+2. Save the file
+
+🎉 **Step 5: Push the Fix and Watch it Go Green** 🟢  
+Send the corrected code back to GitHub:
+
+    ```bash 
+        git add .
+        git commit -m "Test: Intentionally breaking URL validation to test CI pipeline"
+        git push
+    ```
+Go back to your GitHub **Actions** tab. Watch the new workflow run. It will pull the fixed code, rerun the exact same test suite, and reward you with a satisfying **Green Checkmark (✅)**.
+
+## 🏆 Achievements & Results:
+✅ Succesfully implemented Unit & Integration Tests.
+✅ All tests paased.
+✅ Automated tests on every push and PR via CI
