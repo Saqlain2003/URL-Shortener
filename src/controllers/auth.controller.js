@@ -1,5 +1,6 @@
 import User from '../models/User.js';
 import { hashPassword, comparePassword, generateToken } from '../utils/auth.js';
+import Sentry from '../config/sentry.js';
 
 export const signup = async (req, res) => {
   try {
@@ -26,6 +27,7 @@ export const signup = async (req, res) => {
     res.status(201).json({ token, user: { id: user._id, email: user.email } });
   } catch (error) {
     req.log.error({ err: error }, 'Failed to create user');
+    Sentry.captureException(error, { extra: { email: req.body.email } });
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -53,6 +55,7 @@ export const login = async (req, res) => {
     res.status(200).json({ token, user: { id: user._id, email: user.email } });
   } catch (error) {
     req.log.error({ err: error }, 'Failed to login user');
+    Sentry.captureException(error, { extra: { email: req.body.email } });
     res.status(500).json({ error: 'Internal server error' });
   }
 };

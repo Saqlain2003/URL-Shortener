@@ -7,6 +7,7 @@ import urlRoutes from './routes/url.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import healthRoutes from './routes/health.routes.js';
 import helmet from 'helmet';
+import Sentry from './config/sentry.js';
 
 const app = express();
 
@@ -48,5 +49,13 @@ app.use('/', healthRoutes); // health check endpoints
 
 app.use('/api/auth', authRoutes);
 app.use('/', urlRoutes); // GET /:shortCode needs root-level, not /api prefix
+
+// Sentry must be registered AFTER routes, so it can catch errors those routes throw
+Sentry.setupExpressErrorHandler(app);
+// your own fallback error handler, AFTER Sentry's
+app.use((err, req, res, next) => {
+  req.log?.error({ err }, 'Unhandled error');
+  res.status(500).json({ error: 'Internal server error' });
+});
 
 export default app; 

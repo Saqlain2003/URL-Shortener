@@ -2,6 +2,7 @@ import geoip from 'geoip-lite';
 import ClickEvent from '../models/ClickEvent.js';
 import Url from '../models/Url.js';
 import logger from '../config/logger.js';
+import Sentry from '../config/sentry.js';
 
 export const recordClick = async ({ shortCode, referrer, userAgent, ip }) => {
   try {
@@ -19,6 +20,7 @@ export const recordClick = async ({ shortCode, referrer, userAgent, ip }) => {
     // deliberately swallow errors here — analytics failing should NEVER
     // affect the user-facing redirect, which has already completed by the time this runs
     logger.error({ err: error, shortCode }, 'Failed to record click event')
+    Sentry.captureException(error, { extra: { shortCode } });
   }
 };
 

@@ -1,8 +1,13 @@
 import 'dotenv/config';
+import { initSentry } from './src/config/sentry.js';
+
+initSentry();     //must run before importing app.js, so Sentry can instrument everything that follows
+
 import app from './src/app.js';
 import connectDB from './src/config/db.js';
 import { connectRedis } from './src/config/redis.js';
 import { startExpirationJob } from './src/jobs/expireLinks.job.js';
+import logger from './src/config/logger.js';
 
 const PORT = process.env.PORT || 5000;
 
@@ -12,7 +17,7 @@ const startServer = async () => {
   startExpirationJob(); // start the cron job for expiring links
   
   app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    logger.info(`Server running on port ${PORT}`);
   });
 };
 

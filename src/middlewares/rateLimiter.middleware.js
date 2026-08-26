@@ -1,4 +1,5 @@
 import redisClient from '../config/redis.js';
+import Sentry from '../config/sentry.js';
 
 const WINDOW_SECONDS = 60;
 const MAX_REQUESTS = 20; // 20 requests per minute per IP
@@ -26,6 +27,7 @@ export const rateLimiter = async (req, res, next) => {
     next();
   } catch (error) {
     req.log.error({ err: error }, 'Rate limiter error');
+    Sentry.captureException(error, { extra: { ip: req.ip } });
     next(); // fail open — don't block traffic if Redis itself has an issue
   }
 };

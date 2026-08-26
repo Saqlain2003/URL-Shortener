@@ -1,4 +1,5 @@
 import { verifyToken } from '../utils/auth.js';
+import Sentry from '../config/sentry.js';
 
 // REQUIRED auth — blocks the request if no valid token
 export const protect = (req, res, next) => {
@@ -15,6 +16,7 @@ export const protect = (req, res, next) => {
     req.user = { id: decoded.userId };
     next();
   } catch (error) {
+    Sentry.captureException(error, { extra: { token } });
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 };

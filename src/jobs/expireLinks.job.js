@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import Url from '../models/Url.js';
 import redisClient from '../config/redis.js';
 import logger from '../config/logger.js';
+import Sentry from '../config/sentry.js';
 
 const CACHE_PREFIX = 'shorturl:';
 
@@ -29,6 +30,7 @@ export const startExpirationJob = () => {
       if (count > 0) logger.info({ count }, 'Expired links deactivated'); 
     } catch (error) {
       logger.error({ err: error }, 'Expiration job failed');
+      Sentry.captureException(error, { extra: { job: 'expireLinks' } });
     }
   });
 
