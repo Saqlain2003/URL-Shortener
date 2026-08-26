@@ -2,6 +2,7 @@ import Url from '../models/Url.js';
 import redisClient from '../config/redis.js';
 import { encodeBase62 } from '../utils/base62.js';
 import QRCode from 'qrcode';
+import logger from '../config/logger.js';
 // import { customAlphabet } from 'nanoid';        No need for nanoid anymore since we are using Redis counter + Base62 for unique short codes
 
 // temporary generator — Day 2 replaces this with Redis counter + Base62
@@ -57,7 +58,7 @@ export const getOriginalUrl = async (shortCode) => {
   const url = await Url.findOne({ short_code: shortCode, is_active: true });
 
   if(!url) {
-    console.log('SETTING NEGATIVE CACHE FOR:', shortCode);
+    logger.debug('SETTING NEGATIVE CACHE FOR:', shortCode);
     // negative cache — protects against repeated lookups for a code that doesn't exist
     await redisClient.setEx(cacheKey, NEGATIVE_CACHE_TTL_SECONDS, NULL_SENTINEL);
     return null;

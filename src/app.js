@@ -1,4 +1,8 @@
 import express from 'express';
+//import cors from 'cors';
+import pinoHttp from 'pino-http';
+import { randomUUID } from 'crypto';
+import logger from './config/logger.js';
 import urlRoutes from './routes/url.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import healthRoutes from './routes/health.routes.js';
@@ -6,7 +10,25 @@ import healthRoutes from './routes/health.routes.js';
 const app = express();
 
 app.set('trust proxy', true); // needed for req.ip to reflect the real client IP behind proxies
+//app.use(cors()); // enable CORS for all routes
 app.use(express.json()); // parse JSON request bodies
+
+app.use(
+  pinoHttp({
+    logger,
+    genReqId: (req) => req.headers['x-request-id'] || randomUUID(),
+    customLogLevel: (req, res, err) => {
+      if (res.statusCode >= 500 || err) return 'error';
+      if (res.statusCode >= 400) return 'warn';
+      return 'info';
+    },
+    // don't log every health check — they'd flood your logs with noise every few seconds
+    autoLogging: {
+      ignore: (req) => req.url === '/health/live',
+    },
+  })
+);
+
 app.use('/', healthRoutes); // health check endpoints
 
 // app.get('/health', (req, res) => {              //sanity-check the server is actually running before you build anything else on top of it.                                      

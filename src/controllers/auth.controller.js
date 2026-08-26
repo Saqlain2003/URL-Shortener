@@ -25,7 +25,7 @@ export const signup = async (req, res) => {
 
     res.status(201).json({ token, user: { id: user._id, email: user.email } });
   } catch (error) {
-    console.error(error);
+    req.log.error({ err: error }, 'Failed to create user');
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -52,7 +52,7 @@ export const login = async (req, res) => {
 
     res.status(200).json({ token, user: { id: user._id, email: user.email } });
   } catch (error) {
-    console.error(error);
+    req.log.error({ err: error }, 'Failed to login user');
     res.status(500).json({ error: 'Internal server error' });
   }
 };

@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import Url from '../models/Url.js';
 import redisClient from '../config/redis.js';
+import logger from '../config/logger.js';
 
 const CACHE_PREFIX = 'shorturl:';
 
@@ -25,11 +26,11 @@ export const startExpirationJob = () => {
   cron.schedule('*/5 * * * *', async () => {
     try {
       const count = await runExpirationCheck();
-      if (count > 0) console.log(`Expired ${count} link(s)`);
+      if (count > 0) logger.info({ count }, 'Expired links deactivated'); 
     } catch (error) {
-      console.error('Expiration job failed:', error.message);
+      logger.error({ err: error }, 'Expiration job failed');
     }
   });
 
-  console.log('Link expiration cron job scheduled (every 5 min)');
+  logger.info('Link expiration cron job scheduled (every 5 min)');
 };

@@ -17,6 +17,7 @@ export const shortenUrl = async (req, res) => {
     }
 
     if (!isValidUrl(longUrl)) {
+      req.log.warn({ longUrl }, 'Rejected invalid URL');
       return res.status(400).json({ error: 'longUrl must be a valid http/https URL' });
     }
 
@@ -36,12 +37,19 @@ export const shortenUrl = async (req, res) => {
      const userId = req.user?.id || null; // populated by optionalAuth if token present
 
     const url = await createShortUrl(longUrl, customAlias, userId, parsedExpiry);
-    res.status(201).json({ shortCode: url.short_code, longUrl: url.long_url });
+
+    req.log.info({ shortCode: url.short_code, userId }, 'Short URL created');
+
+    res.status(201).json({ 
+      shortCode: url.short_code, 
+      longUrl: url.long_url,
+      expiresAt: url.expires_at,
+    });
   } catch (error) {
     if (error.code === 11000) {
       return res.status(409).json({ error: 'Short code already exists' });
     }
-    console.error(error);
+    req.log.error({ err: error }, 'Failed to create short URL');
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -51,7 +59,7 @@ export const getMyUrls = async (req, res) => {
     const urls = await getUserUrls(req.user.id);
     res.status(200).json({ urls });
   } catch (error) {
-    console.error(error);
+    req.log.error({ err: error }, 'Failed to fetch user URLs');
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -66,6 +74,8 @@ export const redirectUrl = async (req, res) => {
       return res.status(404).json({ error: 'URL not found' });
     }
 
+    req.log.debug({ shortCode, fromCache: url.fromCache }, 'Redirect served');
+
      // fire-and-forget: NOT awaited, redirect happens immediately.
     // This runs in the background after the response has already been sent.
     recordClick({
@@ -77,7 +87,7 @@ export const redirectUrl = async (req, res) => {
 
     res.redirect(url.long_url);
   } catch (error) {
-    console.error(error);
+    req.log.error({ err: error, shortCode: req.params.shortCode }, 'Redirect failed');
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -90,9 +100,9 @@ export const getUrlAnalytics = async (req, res) => {
     if (!analytics) {
       return res.status(404).json({ error: 'Short URL not found' });
     }
-    res.status(200).json(analytics);
+    res.status(200).json(analytics); 
   } catch (error) {
-    console.error(error);
+    req.log.error({ err: error, shortCode: req.params.shortCode }, 'Failed to fetch URL analytics');
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -108,7 +118,7 @@ export const deleteUrl = async (req, res) => {
 
     res.status(200).json({ message: 'URL deactivated' });
   } catch (error) {
-    console.error(error);
+    req.log.error({ err: error, shortCode: req.params.shortCode }, 'Failed to deactivate URL');
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -129,8 +139,8 @@ export const editUrl = async (req, res) => {
     }
 
     res.status(200).json({ shortCode: url.short_code, longUrl: url.long_url });
-  } catch (error) {
-    console.error(error);
+  } catch (error) { 
+    req.log.error({ err: error, shortCode: req.params.shortCode }, 'Failed to edit URL');
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -148,7 +158,7 @@ export const getQrCode = async (req, res) => {
     const qrCode = await generateQrCode(shortCode);
     res.status(200).json({ shortCode, qrCode });
   } catch (error) {
-    console.error(error);
+    req.log.error({ err: error, shortCode: req.params.shortCode }, 'Failed to generate QR code');
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -168,7 +178,7 @@ export const downloadQrCode = async (req, res) => {
     res.set('Content-Disposition', `inline; filename="${shortCode}-qr.png"`);
     res.send(buffer);
   } catch (error) {
-    console.error(error);
+    req.log.error({ err: error, shortCode: req.params.shortCode }, 'Failed to download QR code');
     res.status(500).json({ error: 'Internal server error' });
   }
 };

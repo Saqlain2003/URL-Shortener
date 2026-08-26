@@ -1,6 +1,7 @@
 import geoip from 'geoip-lite';
 import ClickEvent from '../models/ClickEvent.js';
 import Url from '../models/Url.js';
+import logger from '../config/logger.js';
 
 export const recordClick = async ({ shortCode, referrer, userAgent, ip }) => {
   try {
@@ -17,7 +18,7 @@ export const recordClick = async ({ shortCode, referrer, userAgent, ip }) => {
   } catch (error) {
     // deliberately swallow errors here — analytics failing should NEVER
     // affect the user-facing redirect, which has already completed by the time this runs
-    console.error('Failed to record click event:', error.message);
+    logger.error({ err: error, shortCode }, 'Failed to record click event')
   }
 };
 

@@ -729,3 +729,70 @@ Go back to your GitHub **Actions** tab. Watch the new workflow run. It will pull
 ✅ Succesfully implemented Unit & Integration Tests.
 ✅ All tests paased.
 ✅ Automated tests on every push and PR via CI
+<br>
+<br>
+<br>
+# [DATE: 26 AUG 2026] 
+
+## 🎯 Goal for Today:
+* ***Structured Logging - replace console.log with something fancier***
+
+## ✅ What I Implemented / Built:
+* Structured Logging via **Pino**
+
+## 🚧 Problems & Bugs Encountered:
+* **[Problem 1]:-** 
+
+## 💡 Solutions & Learnings:
+* **[Learned 1]:-** **Why not just keep console.log?**
+
+    Worth being explicit about why this matters, not just doing it because it's on the list: console.log output is unstructured plain text — if you wanted to answer "show me every failed login in the last hour" from raw console output, you'd be grepping strings and hoping the format is consistent. **Structured logging means every log entry is a JSON object with consistent fields** (timestamp, level, message, request ID, user ID, etc.) — which means you can filter, search, and aggregate them like data, not just scroll through text.
+
+* **[Choice ]:-**   
+**Choosing a library — Pino over Winston**
+
+    I'm picking Pino specifically, and it's worth understanding why: it's built for extremely low overhead (it does almost no work in the main thread — logging shouldn't slow down your actual request handling), and it outputs pure JSON by default, which is exactly the structured format you want. Winston is also legitimate and more commonly taught, but Pino is what's genuinely used in high-throughput production Node services, and given this project's whole narrative is about performance, it's the more consistent choice.
+
+    ```bash
+        npm install pino pino-http
+        npm install -D pino-pretty
+    ```
+
+    **Why pino-pretty is dev-only:** raw JSON logs are exactly what you want in production (machine-readable, feeds into log aggregators), but they're painful to read directly in your terminal while developing. pino-pretty reformats them into colored, readable lines — but only locally, never in production, where you actually want the raw structured format.
+
+* **[Learned 2]:-** **Why level is configurable via env var, not hardcoded:** log levels (in increasing severity: trace, debug, info, warn, error, fatal) let you control verbosity without touching code. In production you might run at info (skip noisy debug details), but if you're actively debugging a live issue, you could temporarily bump it to debug via an environment variable change and redeploy — no code change needed.
+
+* **[Learned 3]:-** **Why genReqId with a UUID matters — this is the single most valuable piece of today's work:** every incoming request gets a unique ID attached to it, and every log line generated during that request (in your controllers, services, wherever) can include that same ID. That means if a user reports "my redirect failed around 3:15pm," and your app returned that request's ID to them (or you can correlate via timestamp), you can search your logs for that exact single request ID and see its entire lifecycle — every log line it touched, in order — instead of guessing which of thousands of interleaved log lines from concurrent requests belong to that one failure. This is called a correlation ID, and it's a real, standard production pattern, not a nice-to-have.
+
+    **Why we explicitly ignore /health/live:** if you have an uptime monitor or load balancer hitting this every few seconds (which you will, in real deployment), logging every single one would drown out logs that actually matter. Health checks are noise once you trust the system is healthy — you want them excluded, not celebrated.
+
+* **[Learned 4]:-** **req.log vs plain logger — the actual rule**
+
+    This is genuinely simple once you see the pattern: it's not about file type or "importance" — it's purely about whether you have access to req at that point in the code.
+
+    |**Situation**	    |**Use** 	     |**Why**     |
+    | :-------------:   | :-------------:| :--------: |
+    |Inside a **controller function** — (req, res) => {...} |req.log    |You have req right there; using it gives you the automatic correlation ID for free|
+    |Inside a **middleware** — (req, res, next) => {...}    |req.log    |Same reason — req is available|
+    |Inside a **service function** that does NOT receive req as a parameter |logger (the plain imported one)    |There's no req in scope at all — recordClick, createShortUrl, getOriginalUrl are called with plain arguments like shortCode, longUrl, never req itself|
+    |**Server startup code** — server.js, DB/Redis connection files|	logger|	This code runs before any request even exists — there's no req to attach to|
+    |**Cron jobs** — expireLinks.job.js|	logger|	Runs on a timer, completely outside any request lifecycle — no req involved at all|
+
+**The concrete test to ask yourself every time:** "Is there a req object visible in this function's parameters or closure?" If yes → req.log. If no → logger.
+
+## 🧪 Test for Structured Log:
+Start your server and hit a few endpoints. In dev mode, you should see nicely colorized, readable log lines like:
+
+```text
+    [14:32:10] INFO: request completed
+    reqId: "a1b2c3..."
+    res: { statusCode: 201 }
+    responseTime: 12
+```
+
+**Now the real test — correlation IDs actually working:** hit POST /shorten with an invalid URL, and look at the log output. You should see two log lines sharing the exact same reqId — one from req.log.warn(...) inside your controller, and one from pino-http's automatic request-completion log. That shared ID is the entire point.
+
+Temporarily set **NODE_ENV=production** in your .env and restart — you should now see raw JSON instead of colored pretty-print, confirming the dev/prod split works correctly. Switch it back to development afterward for continued local work.
+
+## 🏆 Achievements & Results:
+✅ Successfully Structured Logging implemented
