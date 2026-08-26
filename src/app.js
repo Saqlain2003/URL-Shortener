@@ -6,10 +6,21 @@ import logger from './config/logger.js';
 import urlRoutes from './routes/url.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import healthRoutes from './routes/health.routes.js';
+import helmet from 'helmet';
 
 const app = express();
 
 app.set('trust proxy', true); // needed for req.ip to reflect the real client IP behind proxies
+app.use(helmet()); // add security headers to all responses
+
+// enforce HTTPS in production — trust the X-Forwarded-Proto header set by Nginx/load balancers
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV === 'production' && req.header('x-forwarded-proto') !== 'https') {
+    return res.redirect(301, `https://${req.header('host')}${req.url}`);
+  }
+  next();
+});
+
 //app.use(cors()); // enable CORS for all routes
 app.use(express.json()); // parse JSON request bodies
 

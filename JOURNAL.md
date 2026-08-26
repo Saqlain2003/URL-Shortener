@@ -736,12 +736,14 @@ Go back to your GitHub **Actions** tab. Watch the new workflow run. It will pull
 
 ## 🎯 Goal for Today:
 * ***Structured Logging - replace console.log with something fancier***
+* ***Security Headers + HTTPS***
 
 ## ✅ What I Implemented / Built:
 * Structured Logging via **Pino**
+* Add a middleware which will redirect HTTP methods which are not HTTPS originally
 
 ## 🚧 Problems & Bugs Encountered:
-* **[Problem 1]:-** 
+* No Problem Yet
 
 ## 💡 Solutions & Learnings:
 * **[Learned 1]:-** **Why not just keep console.log?**
@@ -780,6 +782,54 @@ Go back to your GitHub **Actions** tab. Watch the new workflow run. It will pull
 
 **The concrete test to ask yourself every time:** "Is there a req object visible in this function's parameters or closure?" If yes → req.log. If no → logger.
 
+* **[Learned 5]:-** **What helmet actually is, not just "install it because everyone says to":** it's a collection of small middleware functions, each setting one specific HTTP response header that tells browsers to enforce a security behavior. Rather than you hand-writing a dozen headers and getting subtle details wrong, Helmet sets sensible, battle-tested defaults for all of them at once.
+
+    ```text
+        app.use(helmet())
+    ```
+    Let's actually understand what this one line does, header by header — since "just add helmet" without understanding it defeats the point of learning:
+
+    |**Header**  	|**What it prevents** |
+    | :------------:| :------------------:|
+    |**X-Content-Type-Options: nosniff** |	Stops browsers from guessing a file's type differently than declared — prevents a malicious file disguised as an image from executing as a script|
+    |**X-Frame-Options: SAMEORIGIN** |	Prevents your site from being embedded in an \<iframe> on someone else's malicious page — blocks clickjacking (tricking a user into clicking something on your site while it's invisibly framed under a fake UI)|
+    |**Strict-Transport-Security (HSTS)** |	Tells the browser "always use HTTPS for this domain, never fall back to HTTP" — even if a user types http:// or clicks an old http:// link|
+    |**Content-Security-Policy (CSP)** |	Restricts what sources scripts/styles/images can load from — a major defense against XSS (cross-site scripting)|
+    |**Referrer-Policy** |	Controls how much of your URL gets leaked to external sites when a user clicks a link away from your site |
+    |**X-DNS-Prefetch-Control** |	Prevents browsers from pre-resolving DNS for links on your page, which can leak browsing intent |
+
+* **[To be Done]:-
+    * **One thing worth doing deliberately, not just accepting the default:** Helmet's default CSP is fairly strict and can actually break things if you're serving any inline scripts or loading resources from external domains later (e.g., if your React frontend loads a CDN font). For an API-only backend (which is what this Express app actually is — your React UI is a separate app), the default CSP mostly doesn't apply in a meaningful way since you're not serving HTML pages from here. But it's worth explicitly configuring once your frontend is deployed alongside it, so flag this as something to revisit at deployment time rather than something to over-engineer now.
+
+* **[Learned 6]:-** **HTTPS**
+
+    This is the part where I want to be precise about what's actually your responsibility versus what happens at deployment, because getting this backwards is a common point of confusion.
+
+    * **Your Node/Express app itself does not need to implement HTTPS/TLS directly** — and in most real deployments, it deliberately doesn't. Here's the standard architecture: your Express app runs plain HTTP internally, and a reverse proxy in front of it (Nginx — which you already have! — or your cloud provider's load balancer) terminates HTTPS: it holds the actual TLS certificate, decrypts incoming HTTPS traffic, and forwards plain HTTP to your Node app behind it. This is called **TLS termination**, and it's the standard pattern, not a shortcut.
+
+    * **Why this matters for you specifically right now:** you already built an Nginx layer in Day 6. That's exactly where HTTPS termination belongs — not inside your Node app.
+
+    * **What you can and should do in Express right now** — enforce that HTTP requests get redirected to HTTPS, so if somehow a request reaches your app over plain HTTP (bypassing Nginx, or before your cert is set up), you don't silently serve insecure traffic.
+
+    * **Why this checks x-forwarded-proto instead of something like req.secure:** since Nginx sits in front of your app and terminates TLS itself, your actual Node process never sees an HTTPS connection directly — it only ever sees plain HTTP from Nginx. Nginx is responsible for telling your app "hey, the original request from the browser was HTTPS" via this specific header. This is why trust proxy (which you already set) matters here too — it's part of the same trust chain.
+
+    * **Why this only activates in production:** locally, you're testing over plain http://localhost:5000 deliberately — forcing HTTPS redirects during local development would just break all your Postman/curl testing for no benefit. This is exactly the same dev/prod branching pattern you already used for Pino's pretty-printing.
+
+    * **Update your Nginx config (nginx/nginx.conf) to actually pass that header through** — check that it's there, since it's easy to miss:
+
+        ```ngingx
+            location / {
+                proxy_pass http://url_shortener_backend;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+        ```
+        That last line **(X-Forwarded-Proto $scheme)** is the one your new Express middleware depends on — without it, your app has no way to know whether the original request was HTTP or HTTPS.
+
+* **[To be Done]:-** **Where the actual TLS certificate comes from — this is a Day 7 deployment concern, not something to set up locally:** when you deploy, you'll either use your hosting platform's built-in HTTPS (Render, Railway, Fly.io all provision this automatically for you, zero config), or if you're managing your own server with Nginx directly, you'd use **Let's Encrypt** (via certbot) to get a free, auto-renewing certificate. I'd hold off on setting up a real certificate until we get to actual deployment — testing HTTPS locally with a self-signed cert is mostly just friction with no real learning payoff, since browsers will complain about self-signed certs regardless of whether your code is correct.
+
 ## 🧪 Test for Structured Log:
 Start your server and hit a few endpoints. In dev mode, you should see nicely colorized, readable log lines like:
 
@@ -794,5 +844,27 @@ Start your server and hit a few endpoints. In dev mode, you should see nicely co
 
 Temporarily set **NODE_ENV=production** in your .env and restart — you should now see raw JSON instead of colored pretty-print, confirming the dev/prod split works correctly. Switch it back to development afterward for continued local work.
 
+## 🧪 Test for Security Header (What we can do now):
+**Test 1 — Confirm Helmet headers are present:**
+
+```bash
+    curl -I http://localhost:5000/health/live
+```
+
+Look for X-Content-Type-Options, X-Frame-Options, and a few others in the response headers — these should now appear where they didn't before.
+
+**Test 2 — Confirm the HTTPS redirect logic doesn't break local dev:**
+Since NODE_ENV is development locally, hitting any endpoint normally should work completely unaffected. Confirm nothing broke.
+
+**Test 3 — Simulate what production would do (optional, quick check):**
+Temporarily set *NODE_ENV=production* in .env, restart, then:
+
+```bash
+    curl -I http://localhost:5000/health/live
+```
+
+Since there's no x-forwarded-proto header at all in this raw request (nothing set it), it won't equal 'https', so you should see a **301 redirect response**. This confirms the logic fires correctly — just remember to switch NODE_ENV back to development afterward, or your local testing will start redirecting everywhere unexpectedly.
+
 ## 🏆 Achievements & Results:
 ✅ Successfully Structured Logging implemented
+✅ Test for Security Header Passed without breaking any route
