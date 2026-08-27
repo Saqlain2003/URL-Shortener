@@ -875,14 +875,48 @@ Since there's no x-forwarded-proto header at all in this raw request (nothing se
 
 ## 🎯 Goal for Today:
 * ***Sentry Error Tracking***
+* ***Implement a live, interactive API documentation page, plus a machine-readable spec file that could power API clients or contract testing later***
 
 ## ✅ What I Implemented / Built:
 * Implemented Sentry error tracking to receive error via email instead of scrolling through logs
 
-## 🚧 Problems & Bugs Encountered:
-* No Problem Yet
+## 🚧 Problems & Bugs Encountered & their Fixes:
+* **[Problem 1]:-** Encountered URL Not Found error for /api-docs route  
+**[Solution]:-** Place /api-docs route below all middlewares and above all routes in *app.js*
 
-## 💡 Solutions & Learnings:
+* **[ERROR]:-** [04:54:26] ERROR: MongoDB connection failed: Could not connect to any servers in your MongoDB Atlas cluster. One common reason is that you're trying to access the database from an IP that isn't whitelisted. Make sure your current IP address is on your Atlas cluster's IP whitelist: https://www.mongodb.com/docs/atlas/security-whitelist/  
+**[Reason]:-**  IP address most likely changed overnight  
+**[FIX]:-** This error means your MongoDB Atlas database is blocking your application because it does not recognize your current internet connection's IP address. Atlas uses a strict firewall to keep unauthorized users out.  
+Here is how to fix it in 3 quick steps:  
+**1. Log In to MongoDB Atlas**
+    * Go to the MongoDB Atlas dashboard.
+    * Select your project.
+
+    **2. Add Your Current IP**
+    * Click Network Access under the "Security" section in the left sidebar.
+    * Click the Add IP Address button.
+    * Click Add Current IP Address to automatically fill in your current network ID.
+    * Click Confirm and wait about a minute for the status to change to Active.  
+
+    **3. *(Alternative)* Allow Access From Anywhere**  
+If you are traveling, switching networks constantly, or deploying to a cloud server with a dynamic IP, you can temporarily open access to all locations:
+    * Follow the steps above, but instead of adding your current IP, click **Allow Access From Anywhere**.
+    * This sets the IP entry to 0.0.0.0/0.
+    * *Warning:* Only use this if you have a very strong database password, as it allows anyone to attempt to connect.
+
+* **[BUG 1]:-** Redirect route (/\<shortcode>) is showing CORS error in Swagger UI when long URL is another website link like *wikipedia*  
+**[NO FIX Needed]:-** **What's actually happening**
+
+    Swagger UI's "Try it out" button uses the browser's fetch() API to make the request. When your server responds with a 302 redirect, the browser's fetch() automatically tries to follow that redirect — and then tries to read Wikipedia's response to display it in the Swagger UI panel. Wikipedia's server doesn't allow being read cross-origin by a random fetch call from localhost:5000 (no CORS headers permitting it) — so the browser blocks it and fetch() throws "Failed to fetch".
+
+    **This is a limitation of testing redirects through browser-based tools, not a bug in your app**. Any endpoint that redirects to an external domain will hit this same issue in Swagger UI, Postman's "send and follow redirects" mode, or literally any fetch-based tester — because the final destination's CORS policy is what's blocking it, and you have zero control over Wikipedia's CORS settings.
+
+    **How to actually verify this endpoint works**
+    * **Paste the short URL directly into your browser's address bar*8 (not through Swagger UI) — this is a real page navigation, not a fetch() call, so it isn't subject to CORS at all. It'll redirect to Wikipedia correctly.
+    * **Postman**, with "Automatically follow redirects" turned OFF (like we did back in Day 2 testing) — you'll cleanly see the 302 and Location header without Postman trying to chase it down.
+    * **curl -I** — shows just the redirect response headers, no CORS involved.
+
+## 💡 Learnings & Reasons:
 * **[Implementation Reason]:-** **Why Sentry specifically, and what it adds beyond your logging**
 
     Your Pino logging (from earlier) writes structured logs to your terminal/log files — but **nobody is watching that terminal at 2am**. Sentry's actual job is different: it captures errors as they happen, groups identical errors together (so 500 occurrences of the same bug show up as "1 issue, 500 times" not 500 separate alerts), and can notify you (email/Slack) the moment something new breaks — plus it captures the full stack trace, request context, and even the exact line of source code, in a searchable dashboard, not a scrolling terminal.
@@ -922,6 +956,19 @@ Since there's no x-forwarded-proto header at all in this raw request (nothing se
         
             Every result is a candidate. For each one, ask: ***"Does this catch block sit inside something Express's automatic handler will ever see?"*** If yes (a normal controller inside a route) — it still needs the manual call, because Express's handler only sees errors that reach it, and a caught error never does, ever, regardless of where the catch is. If no (a cron job, a fire-and-forget function) — it definitely needs the manual call, because there's no fallback safety net at all.
 
+* **[Choosing Library]:-** **swagger-jsdoc + swagger-ui-express** is the standard pairing for an existing Express app like yours: you write documentation as JSDoc-style comments directly above each route, a tool compiles those comments into an OpenAPI spec, and a UI renders that spec as an interactive page where anyone can browse and even test your endpoints directly in the browser.
+
+    ```bash
+        npm install swagger-jsdoc swagger-ui-express
+    ```
+
+* **[Learned 3]:-** 
+    * **Why components.securitySchemes matters:** this defines once, centrally, what "authenticated" means for your API (a Bearer JWT token). Individual routes then just reference bearerAuth by name rather than re-explaining the auth mechanism every time — and critically, this is what makes Swagger UI show a padlock icon and an "Authorize" button, letting someone paste in a token once and have it applied to every subsequent test request they make from the docs page.
+
+    * **security: [{ bearerAuth: [] }, {}] on the /shorten route specifically** — this is deliberately unusual and directly reflects a real architectural decision you made back on Day 5. Most authenticated routes only list bearerAuth. This one lists both bearerAuth and an empty object {} — which tells Swagger "this endpoint accepts a token OR no token at all." That's not boilerplate — it's the documentation correctly reflecting optionalAuth, the exact middleware you built specifically because anonymous and logged-in users both need to hit this same endpoint. Good documentation should reflect real design decisions like this, not just list "requires auth: yes/no."
+
+    * **Why tags matter ([URLs], [Auth], [Analytics], [QR Codes])** — Swagger UI groups endpoints into collapsible sections by tag. Without tags, you'd get one long flat list of every route; with them, someone browsing your docs sees a clean, organized structure that mirrors how you actually think about the API's boundaries.
+
 ## 🧪 Test for Sentry Error Tracking:
 Add a deliberately broken temporary test route to confirm Sentry receives real errors, then remove it:
 
@@ -936,6 +983,12 @@ Hit GET http://localhost:5000/debug-sentry in Postman, then check your Sentry da
 
 **Once confirmed, delete that route** — it's a real, unguarded way to crash your server on demand, and has no business existing outside this one verification step.
 
+## 🧪 Test for OpenAPI docs:
+Restart your server, visit http://localhost:5000/api-docs again — you should now see a fully organized, interactive page with all your endpoints grouped by tag, example request bodies, and documented response codes.
+
+The genuinely satisfying test: click "Authorize" at the top, log in via Postman first to get a real JWT, paste it in, then use Swagger UI's "Try it out" button directly on GET /api/urls/my — it should actually execute a real request against your running server and show you the real response, right there in the browser. This is the point where "documentation" becomes "documentation you can also use as a testing tool" — genuinely useful even for you, day to day, not just for someone evaluating your project.
+
 ## 🏆 Achievements & Results:
 ✅ Successfully seeing error listed in Sentry dashboard  
 ✅ Receiving errors via email no need to scroll through loggings to find error
+✅ Now we a live, interactive API documentation page
