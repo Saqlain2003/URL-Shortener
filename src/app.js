@@ -8,6 +8,8 @@ import authRoutes from './routes/auth.routes.js';
 import healthRoutes from './routes/health.routes.js';
 import helmet from 'helmet';
 import Sentry from './config/sentry.js';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger.js';
 
 const app = express();
 
@@ -40,6 +42,13 @@ app.use(
     },
   })
 );
+
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+app.get('/api-docs.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+}); 
 
 app.use('/', healthRoutes); // health check endpoints
 
