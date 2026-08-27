@@ -7,7 +7,8 @@ import {
   getUrlAnalytics,
   getMyUrls,
   getQrCode,
-  downloadQrCode
+  downloadQrCode,
+  getUrlTimeSeries
 } from '../controllers/url.controller.js';
 import { protect, optionalAuth } from '../middlewares/auth.middleware.js';
 import { rateLimiter } from '../middlewares/rateLimiter.middleware.js';
@@ -172,6 +173,34 @@ router.get('/api/analytics/:shortCode', getUrlAnalytics); // must stay ABOVE the
 // router.get('/debug-sentry', () => {
 //   throw new Error('Test error for Sentry verification');
 // });
+
+/**
+ * @openapi
+ * /api/analytics/{shortCode}/timeseries:
+ *   get:
+ *     summary: Get daily click counts over a time range
+ *     tags: [Analytics]
+ *     parameters:
+ *       - in: path
+ *         name: shortCode
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: days
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 7
+ *           maximum: 90
+ *         description: Number of days to look back
+ *     responses:
+ *       200:
+ *         description: Array of { date, count } objects, one per day, gaps filled with zero
+ *       404:
+ *         description: Short code was never created
+ */
+router.get('/api/analytics/:shortCode/timeseries', getUrlTimeSeries);
 
 /**
  * @openapi

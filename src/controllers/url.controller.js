@@ -5,9 +5,14 @@ import { createShortUrl,
          getUserUrls,
          generateQrCode,
          generateQrCodeBuffer } from '../services/url.service.js';
-import { recordClick, getAnalytics } from '../services/analytics.service.js';
+
+import { recordClick, 
+         getAnalytics, 
+         getTimeSeriesAnalytics } from '../services/analytics.service.js';
+
 import { isValidUrl, isValidAlias } from '../utils/validators.js';
 import Sentry from '../config/sentry.js';
+import Url from '../models/Url.js';
 
 export const shortenUrl = async (req, res) => {
   try {
@@ -107,6 +112,25 @@ export const getUrlAnalytics = async (req, res) => {
     res.status(200).json(analytics); 
   } catch (error) {
     req.log.error({ err: error, shortCode: req.params.shortCode }, 'Failed to fetch URL analytics');
+    Sentry.captureException(error, { extra: { shortCode: req.params.shortCode } });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const getUrlTimeSeries = async (req, res) => {
+  try {
+    const { shortCode } = req.params;
+    const days = Math.min(parseInt(req.query.days) || 7, 90); // cap at 90 to prevent abuse
+
+    const urlExists = await Url.exists({ short_code: shortCode });
+    if (!urlExists) {
+      return res.status(404).json({ error: 'Short URL not found' });
+    }
+
+    const timeSeries = await getTimeSeriesAnalytics(shortCode, days);
+    res.status(200).json({ shortCode, days, timeSeries });
+  } catch (error) {
+    req.log.error({ err: error, shortCode: req.params.shortCode }, 'Failed to fetch time-series analytics');
     Sentry.captureException(error, { extra: { shortCode: req.params.shortCode } });
     res.status(500).json({ error: 'Internal server error' });
   }

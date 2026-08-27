@@ -32,6 +32,10 @@ const clickEventSchema = new mongoose.Schema({
   },
 });
 
+// compound index — supports queries that filter by short_code AND range over timestamp together,
+// which is exactly what every time-series query below does
+clickEventSchema.index({ short_code: 1, timestamp: 1 });
+
 const ClickEvent = mongoose.model('ClickEvent', clickEventSchema);
 
 export default ClickEvent;
