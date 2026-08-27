@@ -866,5 +866,76 @@ Temporarily set *NODE_ENV=production* in .env, restart, then:
 Since there's no x-forwarded-proto header at all in this raw request (nothing set it), it won't equal 'https', so you should see a **301 redirect response**. This confirms the logic fires correctly — just remember to switch NODE_ENV back to development afterward, or your local testing will start redirecting everywhere unexpectedly.
 
 ## 🏆 Achievements & Results:
-✅ Successfully Structured Logging implemented
+✅ Successfully Structured Logging implemented  
 ✅ Test for Security Header Passed without breaking any route
+<br>
+<br>
+<br>
+# [DATE: 27 AUG 2026] 
+
+## 🎯 Goal for Today:
+* ***Sentry Error Tracking***
+
+## ✅ What I Implemented / Built:
+* Implemented Sentry error tracking to receive error via email instead of scrolling through logs
+
+## 🚧 Problems & Bugs Encountered:
+* No Problem Yet
+
+## 💡 Solutions & Learnings:
+* **[Implementation Reason]:-** **Why Sentry specifically, and what it adds beyond your logging**
+
+    Your Pino logging (from earlier) writes structured logs to your terminal/log files — but **nobody is watching that terminal at 2am**. Sentry's actual job is different: it captures errors as they happen, groups identical errors together (so 500 occurrences of the same bug show up as "1 issue, 500 times" not 500 separate alerts), and can notify you (email/Slack) the moment something new breaks — plus it captures the full stack trace, request context, and even the exact line of source code, in a searchable dashboard, not a scrolling terminal.
+
+    **Account & project setup:-**
+    * Go to sentry.io, create a free account, create a new project, choose Node.js/Express as the platform. Sentry will give you a DSN (a unique URL that tells your app where to send error data) — copy it.
+
+    * Add to .env:
+    
+        ```env
+            SENTRY_DSN=https://your-actual-dsn-here@sentry.io/your-project-id
+        ```
+    
+    * Install:
+
+        ```bash
+            npm install @sentry/node
+        ```
+
+* **[Learned 1]:-**   
+    * **Why tracesSampleRate differs between dev and prod:** this controls what fraction of requests get detailed performance tracing (not just errors — full request timing breakdowns). 1.0 in dev means "trace everything" since your traffic is just you testing. 0.1 in production means "trace 10% of requests" — because at real scale, tracing every single request adds overhead and cost; sampling gives you a statistically representative picture without the full expense. This exact tradeoff — sampling for cost/performance vs completeness — is a recurring theme in production observability, worth remembering beyond just Sentry.
+
+    * **Why we check if (!process.env.SENTRY_DSN) and bail gracefully:** this means your app runs completely normally with zero Sentry overhead if the DSN isn't configured — useful for CI (where you don't want tests accidentally sending real error events to your Sentry project) and for anyone cloning this repo without their own Sentry account.
+
+* **[Learned 2]:-** 
+    * **Why the ordering initSentry() is genuinely strict, not just tidy:** Sentry's Node SDK works by automatically instrumenting things like Express, HTTP requests, and database calls — but only if it's initialized before those modules are imported and set themselves up. If you *initSentry()* after *app.js* is already imported and Express is already configured, Sentry can miss capturing errors from parts of the app it never got a chance to instrument. This is a real, commonly-made mistake — "I added Sentry but it's not catching anything" is very often just an ordering bug like this.
+
+    * **Why the ordering matters in app.js- *Sentry.setupExpressErrorHandler(app);* too, same principle as before:** Express middleware and error handlers execute in the order they're registered. If your own error handler ran first and already sent a response, Sentry's handler downstream would never even get the chance to see the error. Sentry needs to intercept it first, then let it continue to your handler for the actual user-facing response.
+
+    * **Sentry auto-captures unhandled errors** that reach Express's error-handling flow, but your controllers currently **catch their own errors** in try/catch blocks and handle them manually (returning a clean 500 response) — which means those errors never reach Sentry's automatic handler at all. You need to explicitly tell Sentry about them.
+
+        * **The reliable way to find every spot, rather than guessing:** search your project for the literal string catch (error) or catch (err) across all files:
+
+            ```bash
+                grep -rn "catch (error)" src/
+            ```
+        
+            Every result is a candidate. For each one, ask: ***"Does this catch block sit inside something Express's automatic handler will ever see?"*** If yes (a normal controller inside a route) — it still needs the manual call, because Express's handler only sees errors that reach it, and a caught error never does, ever, regardless of where the catch is. If no (a cron job, a fire-and-forget function) — it definitely needs the manual call, because there's no fallback safety net at all.
+
+## 🧪 Test for Sentry Error Tracking:
+Add a deliberately broken temporary test route to confirm Sentry receives real errors, then remove it:
+
+```javascript
+    // TEMPORARY — remove after confirming Sentry works
+    router.get('/debug-sentry', () => {
+    throw new Error('Test error for Sentry verification');
+    });
+```
+
+Hit GET http://localhost:5000/debug-sentry in Postman, then check your Sentry dashboard — within a few seconds, you should see this exact error appear, with the full stack trace, the request URL, headers, and — since you're running in development with tracesSampleRate: 1.0 — timing information too.
+
+**Once confirmed, delete that route** — it's a real, unguarded way to crash your server on demand, and has no business existing outside this one verification step.
+
+## 🏆 Achievements & Results:
+✅ Successfully seeing error listed in Sentry dashboard  
+✅ Receiving errors via email no need to scroll through loggings to find error
