@@ -876,9 +876,12 @@ Since there's no x-forwarded-proto header at all in this raw request (nothing se
 ## 🎯 Goal for Today:
 * ***Sentry Error Tracking***
 * ***Implement a live, interactive API documentation page, plus a machine-readable spec file that could power API clients or contract testing later***
+* ***To see clicks per day over the last week/month rather than just a lifetime total***
 
 ## ✅ What I Implemented / Built:
 * Implemented Sentry error tracking to receive error via email instead of scrolling through logs
+* Implemented interactive API documentation page using OpenAPI docs
+* Implemented Time-Series Analytics and automated tests
 
 ## 🚧 Problems & Bugs Encountered & their Fixes:
 * **[Problem 1]:-** Encountered URL Not Found error for /api-docs route  
@@ -969,6 +972,19 @@ If you are traveling, switching networks constantly, or deploying to a cloud ser
 
     * **Why tags matter ([URLs], [Auth], [Analytics], [QR Codes])** — Swagger UI groups endpoints into collapsible sections by tag. Without tags, you'd get one long flat list of every route; with them, someone browsing your docs sees a clean, organized structure that mirrors how you actually think about the API's boundaries.
 
+* **[Time-Series Design Decision]:-** 
+    * **Which time buckets?** Days by default, since that's the most universally useful view (a chart of "clicks per day"). We'll parameterize it so hourly is also possible for a busy single day, but default to daily.
+
+    * **How to group by day in MongoDB, without pulling every raw document into Node and grouping manually?** Use the aggregation pipeline's $dateTrunc operator — this truncates each timestamp down to the start of its day (or hour), directly in the database, which is far more efficient than fetching potentially millions of raw click events and grouping them in JavaScript.
+
+    * **Do we need a new index?** Yes — worth adding one now, because time-series queries filter by *short_code* and range over *timestamp* together. A compound index on both fields together is what actually makes this fast at scale; without it, MongoDB would use one field's index and then manually scan for the other.
+
+    * **Why compound and not two separate single-field indexes:** MongoDB can only efficiently use one index per query in most cases. If you had a separate index on *short_code* and a separate one on *timestamp*, a query filtering on both would pick one of them and still have to manually scan through all matching documents to check the other condition. A compound index **{ short_code: 1, timestamp: 1 }** lets MongoDB jump directly to the exact range of documents matching both conditions at once — this is a real, meaningful performance difference once your *ClickEvent* collection has real volume.
+
+    * **Why the "fill in zero-click days" step matters, and isn't just extra polish:** MongoDB's aggregation only returns groups that actually have at least one matching document. If a link got zero clicks on a Tuesday, there's simply no group for Tuesday in the raw results — it's absent, not present with a **0**. If you fed that directly into a chart, Tuesday would just be skipped entirely, visually compressing the timeline and making it look like Monday was immediately followed by Wednesday. Explicitly building the full date range and filling gaps with **0** is what makes the resulting data honestly represent a continuous timeline — this is a genuinely common, easy-to-miss bug in real analytics dashboards.
+
+* **[Learned 4]:-** **Why Math.min(..., 90) on the days parameter:** without this cap, someone could request **?days=999999** and force MongoDB to scan and bucket years of data in one query — a cheap, easy way to accidentally (or deliberately) create a slow, expensive request. Capping user-controlled range parameters like this is a small habit worth having everywhere a client can specify "how much data to return."
+
 ## 🧪 Test for Sentry Error Tracking:
 Add a deliberately broken temporary test route to confirm Sentry receives real errors, then remove it:
 
@@ -988,7 +1004,47 @@ Restart your server, visit http://localhost:5000/api-docs again — you should n
 
 The genuinely satisfying test: click "Authorize" at the top, log in via Postman first to get a real JWT, paste it in, then use Swagger UI's "Try it out" button directly on GET /api/urls/my — it should actually execute a real request against your running server and show you the real response, right there in the browser. This is the point where "documentation" becomes "documentation you can also use as a testing tool" — genuinely useful even for you, day to day, not just for someone evaluating your project.
 
+## 🧪 Test for Time-Series Analytics:
+1. **Hit the endpoint:**
+
+    ```text
+        GET http://localhost:5000/api/analytics/d/timeseries?days=7
+    ```
+    **Expected shape:**
+
+    ```json
+        {
+            "shortCode": "d",
+            "days": 7,
+            "timeSeries": [
+                { "date": "2026-08-19", "count": 0 },
+                { "date": "2026-08-20", "count": 0 },
+                { "date": "2026-08-21", "count": 2 },
+                { "date": "2026-08-22", "count": 1 },
+                { "date": "2026-08-23", "count": 0 },
+                { "date": "2026-08-24", "count": 0 },
+                { "date": "2026-08-25", "count": 1 }
+            ]
+        }
+    ```
+    **What to actually verify, not just glance at:** confirm you get exactly 7 entries (not just the days that had data), confirm the zero-count days are genuinely present with count: 0, and confirm the counts on the days you seeded data match what you inserted.
+
+2. **Cap enforcement:**
+
+    ```text
+        GET http://localhost:5000/api/analytics/d/timeseries?days=99999
+    ```
+    Should return exactly 90 days, not 99999 — confirming the cap actually works, not just exists in the code.
+
+3. **Non-existent short code:**
+
+    ```text
+        GET http://localhost:5000/api/analytics/doesnotexist/timeseries
+    ```
+    Should be 404, consistent with your existing /api/analytics/:shortCode behavior.
+
 ## 🏆 Achievements & Results:
 ✅ Successfully seeing error listed in Sentry dashboard  
-✅ Receiving errors via email no need to scroll through loggings to find error
-✅ Now we a live, interactive API documentation page
+✅ Receiving errors via email no need to scroll through loggings to find error  
+✅ Now we have a live, interactive API documentation page  
+✅ Successfully implemented and Time-Series Analytics
