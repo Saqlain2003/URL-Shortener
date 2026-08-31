@@ -3,6 +3,7 @@ import { initSentry } from './src/config/sentry.js';
 
 initSentry();     //must run before importing app.js, so Sentry can instrument everything that follows
 
+import analyticsWorker from './src/workers/analytics.worker.js';
 import app from './src/app.js';
 import connectDB from './src/config/db.js';
 import { connectRedis } from './src/config/redis.js';
@@ -16,6 +17,10 @@ const startServer = async () => {
   await connectRedis(); // wait for Redis connection before accepting requests
   startExpirationJob(); // start the cron job for expiring links
   
+  // start processing queued jobs — must happen after DB is connected,
+  // since the worker writes to MongoDB
+  logger.info('Analytics worker started');
+
   app.listen(PORT, () => {
     logger.info(`Server running on port ${PORT}`);
   });

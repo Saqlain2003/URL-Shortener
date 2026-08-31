@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import request from 'supertest';
 import './setup.js';
+import { processClickJob } from '../services/clickProcessor.service.js';
 
 vi.mock('../config/redis.js', () => {
   const store = new Map();
@@ -27,6 +28,16 @@ vi.mock('../config/redis.js', () => {
     __store: store,
   };
 });
+
+// simulate a worker processing the job immediately and synchronously,
+// so tests don't depend on real Redis/BullMQ infrastructure
+vi.mock('../queues/analytics.queue.js', () => ({
+  analyticsQueue: {
+    add: vi.fn(async (name, data) => {
+      await processClickJob(data);
+    }),
+  },
+}));
 
 const { default: app } = await import('../app.js');
 

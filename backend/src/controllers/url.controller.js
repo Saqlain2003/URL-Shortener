@@ -6,13 +6,13 @@ import { createShortUrl,
          generateQrCode,
          generateQrCodeBuffer } from '../services/url.service.js';
 
-import { recordClick, 
-         getAnalytics, 
+import { getAnalytics, 
          getTimeSeriesAnalytics } from '../services/analytics.service.js';
 
 import { isValidUrl, isValidAlias } from '../utils/validators.js';
 import Sentry from '../config/sentry.js';
 import Url from '../models/Url.js';
+import { analyticsQueue } from '../queues/analytics.queue.js';
 
 export const shortenUrl = async (req, res) => {
   try {
@@ -86,11 +86,25 @@ export const redirectUrl = async (req, res) => {
 
      // fire-and-forget: NOT awaited, redirect happens immediately.
     // This runs in the background after the response has already been sent.
-    recordClick({
+    // recordClick({
+    //   shortCode,
+    //   referrer: req.get('referer'),
+    //   userAgent: req.get('user-agent'),
+    //   ip: req.ip,
+    // });
+
+    // enqueue instead of calling recordClick directly —
+    // this write to Redis is fast and durable, unlike an in-process async function call
+    analyticsQueue.add('record-click', {
       shortCode,
       referrer: req.get('referer'),
       userAgent: req.get('user-agent'),
       ip: req.ip,
+    }).catch((err) => {
+      // even enqueueing itself could theoretically fail (e.g., Redis briefly down) —
+      // this must never break the redirect, so we only log it
+      req.log.error({ err, shortCode }, 'Failed to enqueue analytics job');
+      Sentry.captureException(err, { extra: { shortCode } });
     });
 
     res.redirect(url.long_url);

@@ -45,30 +45,34 @@ Load tested locally with `autocannon` (50 concurrent connections, 10 second dura
 
 ```text
 📦 url-shortener/
-├── 📂 src/
-│   ├── 📂 config/
-│   │   ├── 💻 db.js              → Mongo connection setup
-│   │   └── 💻 redis.js           → Redis client setup
-│   ├── 📂 models/
-│   │   ├── 💻 Url.js              → Mongoose schema for URLs
-│   │   ├── 💻 User.js             → (Day 5)
-│   │   └── 💻 ClickEvent.js       → (Day 4)
-│   ├── 📂 controllers/
-│   │   └── 💻 url.controller.js   → handles req/res, calls services
-│   ├── 📂 services/
-│   │   └── 💻 url.service.js      → business logic (create, lookup, etc.)
-│   ├── 📂 routes/
-│   │   └── 💻 url.routes.js       → maps endpoints to controllers
-│   ├── 📂 middlewares/
-│   │   └── 💻 errorHandler.js
-│   ├── 📂 utils/
-│   │   └── 💻 validators.js       → URL validation helpers
-│   └── 💻 app.js                  → Express app setup
-├── 💻 server.js                   → entry point, starts the server
-├── ⚙️ .env
-├── 📝 JOURNAL.md
-├── 📝 README.md
-└── ⚙️ package.json
+├── 📂backend/
+│   ├── 📂 src/
+│   │   ├── 📂 config/
+│   │   │   ├── 💻 db.js              → Mongo connection setup
+│   │   │   └── 💻 redis.js           → Redis client setup
+│   │   ├── 📂 models/
+│   │   │   ├── 💻 Url.js              → Mongoose schema for URLs
+│   │   │   ├── 💻 User.js             → (Day 5)
+│   │   │   └── 💻 ClickEvent.js       → (Day 4)
+│   │   ├── 📂 controllers/
+│   │   │   └── 💻 url.controller.js   → handles req/res, calls services
+│   │   ├── 📂 services/
+│   │   │   └── 💻 url.service.js      → business logic (create, lookup, etc.)
+│   │   ├── 📂 routes/
+│   │   │   └── 💻 url.routes.js       → maps endpoints to controllers
+│   │   ├── 📂 middlewares/
+│   │   │   └── 💻 errorHandler.js
+│   │   ├── 📂 utils/
+│   │   │   └── 💻 validators.js       → URL validation helpers
+│   │   └── 💻 app.js                  → Express app setup
+│   ├── 💻 server.js                   → entry point, starts the server
+│   ├── ⚙️ .env
+│   ├── ⚙️ .env.example
+│   ├── 📝 JOURNAL.md
+│   ├── 📝 README.md
+│   └── ⚙️ package.json
+│
+├──
 ```
 
 ## 🛠️ Prerequisites
