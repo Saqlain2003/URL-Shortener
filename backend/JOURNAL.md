@@ -1048,3 +1048,151 @@ The genuinely satisfying test: click "Authorize" at the top, log in via Postman 
 ✅ Receiving errors via email no need to scroll through loggings to find error  
 ✅ Now we have a live, interactive API documentation page  
 ✅ Successfully implemented and Time-Series Analytics
+<br>
+<br>
+<br>
+
+# [DATE: 31 AUG 2026] 
+
+## 🎯 Goal for Today:
+* ***Closing the durability gap we've flagged i.e. right now, if Node process crashes in the split-second after sending a redirect but before recordClick finishes writing, that click is lost forever, silently***  
+
+## ✅ What I Implemented / Built:
+* Implemented **BullMQ** to fix the durability gap by putting the job in redis before fail 
+
+## 🚧 Problems & Bugs Encountered & Their Fixes:
+* **[Test Fails]:-** **analytics.test.js — clicks not being recorded**  
+**[Reason]:-** This is the more important one, and it's a direct consequence of introducing BullMQ. Your test hits the redirect, **waits 100ms**, then checks the analytics endpoint — but there's no real ioredis/BullMQ worker running during tests, so the job never actually gets processed. The wait(100) used to be enough back when recordClick ran in-process — now it's waiting for something that structurally cannot happen in the test environment at all.  
+**[FIX]:-**  **Mock the queue to simulate immediate processing**  
+    * **Update src/tests/analytics.test.js** — add a queue mock that calls processClickJob directly, simulating what a real worker would eventually do, but synchronously for test purposes
+
+    * **Remove the wait(100) if you want** — since processClickJob is now awaited directly inside the mocked .add(), and your controller's .catch() chain resolves before res.redirect() fires in practice (Node's microtask queue processes the analyticsQueue.add(...).catch(...) promise chain's initial synchronous portion immediately). Honestly, keep the wait(100) in anyway — it's cheap insurance against timing assumptions changing later, and removing it doesn't meaningfully speed up your suite.
+
+* **[BUG]:-** CI Automated test not working on Push after moving backend logic from URL Shotener to backend/ folder  
+**[FIX]:-** GitHub only detects workflows at **exactly** .github/workflows/*.yml (or .yaml), relative to the **repo root**, not relative to backend/. Since you just restructured into a monorepo, this is genuinely the most likely culprit — if .github/ accidentally got moved inside backend/ during your move operation, GitHub will not see it at all.
+
+    **Check right now:**
+
+    ```bash
+    git ls-files | grep workflows
+    ```
+
+    This lists every file Git is actually tracking that matches "workflows" — you should see exactly:
+
+    ```text
+        .github/workflows/ci.yml
+    ```
+
+    If instead you see backend/.github/workflows/ci.yml, that's the bug — it moved into backend/ along with everything else during your restructure. Fix it:
+
+    ```bash
+        mkdir -p .github/workflows
+        git mv backend/.github/workflows/ci.yml .github/workflows/ci.yml
+        git commit -m "Fix CI workflow path after monorepo restructure"
+        git push
+    ```
+
+## 💡 Learnings & Reasons:
+* **[Implementation Reason]:-** **Why ioredis and not your existing redis client:** BullMQ is built specifically on top of ioredis's API and connection handling — it's not optional, it's a hard dependency of the library. This means you'll have two separate Redis client instances in your app: your existing redis client (caching, rate limiting, ID counter) and a new ioredis client (purely for BullMQ's queue). Both connect to the same Redis server — it's just two different client libraries talking to it.
+
+* **[Learned 1]:-** 
+    * **Why maxRetriesPerRequest: null specifically:** this isn't a style choice — BullMQ documents this as a hard requirement. It disables ioredis's own request-level retry limit because BullMQ implements its own, more sophisticated retry/backoff logic for jobs internally. Leaving the default in place causes real, confusing failures under load.
+
+    * **Actual mechanism that fixes the durability problem — understand it precisely, not just as "now it's queued":** analyticsQueue.add(...) writes the job data directly into Redis — a fast, single network round-trip — and only after that write succeeds does control return to your code. If your Node process crashes one millisecond after this line runs, **the job already exists safely in Redis**, independent of your crashed process. A completely separate worker process (which we're about to build) will pick it up whenever it comes back online. Compare this to the old approach: recordClick(...) without await started an in-memory async operation that lived and died entirely within that one Node process — if the process died mid-flight, there was nothing anywhere else that remembered the job needed to happen at all.
+
+    * **Notice .catch(...) is still there, still fire-and-forget at this specific step** — this is intentional, not a leftover oversight. Enqueueing is extremely fast and reliable (Redis is right there, this isn't the slow MongoDB write anymore), but if it somehow does fail, we still must never let that block or fail the user's redirect. The durability guarantee lives in not needing to await the queue write to be safe — once BullMQ + Redis are healthy, the write is fast enough that awaiting it wouldn't meaningfully hurt latency either, but we're keeping the same fire-and-forget shape for consistency and defense-in-depth.
+
+    * **Why concurrency: 5:** this controls how many jobs this worker processes in parallel. Without a limit, a sudden burst of thousands of queued clicks could try to open thousands of simultaneous MongoDB writes at once, overwhelming your connection pool. 5 is a reasonable default for this project's scale — a real production tuning decision would be based on actual load testing, but the concept to understand is: **the queue absorbs bursts, and concurrency controls how fast you drain it**, decoupling "how fast clicks arrive" from "how fast you can safely write them."
+
+    * **Why BullMQ retries failed jobs automatically:** by default, if the job function throws (e.g., MongoDB is briefly unreachable), BullMQ keeps the job and retries it with backoff, rather than losing it. This is the second half of the durability story — not just "the job survives your Node process crashing," but "the job survives temporary failures in the thing it's trying to write to," which your old fire-and-forget approach also couldn't do (a single failed write there was just gone, silently, forever).
+
+    * **[BullMQ's Flow]:**   
+    <br>
+    **Before (Day 4):** recordClick(...) — no await — ran the entire operation (geoip lookup + MongoDB write) in the background, still inside your Node process. If the process crashed at any point during that entire operation, the click was lost.
+
+        **Now:** analyticsQueue.add(...) writes the job data to Redis. This is awaited implicitly through its own promise chain with .catch(), but critically — the redirect doesn't wait for it, since we never await it before calling res.redirect(). The important shift is what is fire-and-forget: it's now just "write a small job to Redis," not "do the whole geoip lookup + Mongo write." That Redis write is extremely fast and durable the instant it succeeds — once it's in Redis, a separate worker process (not tied to your API server's lifetime at all) picks it up and does the actual Mongo write, with its own retry logic if that write fails.
+
+        So the more precise statement: **we shrank the "risk window" where data could be lost from "the entire click-processing operation" down to just "the moment between calling .add() and Redis confirming it received the job."** That's a much smaller, much less likely failure window — and even if Redis is briefly unreachable during that one call, our .catch() at least logs and reports it via Sentry, rather than losing it completely silently the way the old version did.
+
+* **[Learned 2]:-** Just importing analyticsWorker at the top is enough to start it — creating a new Worker(...) immediately begins listening for jobs. The explicit log line just confirms it in your terminal.
+
+* **[Production]:-** **Worth knowing for later, not needed today:** in a real production deployment at scale, the worker often runs as a **completely separate process** (even a separate container/service) from your API server, so a traffic spike hammering your API doesn't compete for CPU with your background job processing, and you can scale each independently. For now, running it inside the same process is the right amount of complexity — just know this is the natural next evolution if you ever needed it.
+
+* **[Test Note]:-** BullMQ genuinely requires a real Redis connection — it can't be mocked the way our simple Map-based fake worked for the redis package, since BullMQ relies on Redis-specific data structures (sorted sets, streams) internally. For integration tests, the practical approach is to mock the queue module itself — verify your controller correctly calls .add() with the right data, without needing a real queue/worker round trip in the test.
+ 
+    * **src/tests/redirectQueue.test.js test structure teaches an important, generalizable idea:** we're not testing "does BullMQ work" (that's BullMQ's own job to guarantee, not yours to re-verify) — we're testing "does my code correctly hand off to the queue with the right data." This is the same boundary-drawing principle as mocking Redis for caching tests — you test your own logic, and trust well-established libraries to do their documented job.
+
+    * For genuinely testing the worker's actual processing logic (does it correctly write a ClickEvent given job data), you can test that function in isolation without BullMQ's Worker wrapper at all — pull the processing logic into its own exported function, same refactor pattern we used for the cron job
+
+* **[Learned 3]:-**   
+    <br>
+    **The 37 keys — yes, this is BullMQ's own internal bookkeeping**
+
+    * **BullMQ doesn't use one Redis key per job — it uses several keys per queue, regardless of job count, plus a handful per job**. This is genuinely worth understanding rather than being alarmed by, since "37 keys for 10 redirects" sounds disproportionate until you see what they actually are.
+
+    * Run this to see them broken down:
+
+        ```bash
+            redis-cli
+            KEYS bull:analytics:*
+        ```
+
+    * You'll see things like:
+
+        * **bull:analytics:id** — a counter tracking the next job ID
+        * **bull:analytics:wait** — a list of jobs waiting to be picked up
+        * **bull:analytics:active** — jobs currently being processed
+        * **bull:analytics:completed** — a sorted set tracking completed job IDs (for a retention window)
+        * **bull:analytics:events** — a stream used for job event notifications
+        * Then individual keys per job, like **bull:analytics:1, bull:analytics:2, etc.** — one hash per job storing its data and status
+
+    * **So the "37" isn't 37 separate clicks — it's a mix of queue-level infrastructure keys (fixed overhead, roughly the same whether you send 10 or 10,000 jobs) plus per-job keys**. This is expected BullMQ behavior, not a leak or a bug.
+
+    * **One thing worth knowing for later, not urgent now:** completed jobs don't disappear from Redis instantly by default — they stick around for a retention period (configurable via removeOnComplete) so you can inspect job history/results if needed. At real scale, you'd configure this explicitly:
+
+        ```javascript
+            new Queue('analytics', {
+            connection,
+            defaultJobOptions: {
+                removeOnComplete: { count: 1000 }, // keep last 1000 completed jobs, discard older
+                removeOnFail: { count: 5000 },
+            },
+            });
+        ```
+
+    * Without this, a high-traffic queue would let completed job records accumulate in Redis indefinitely, which is a real, known "gotcha" people hit in production. Worth adding now since it's a one-line config, genuinely low effort
+
+## 🧪 Test for Durability (Queued Job):
+**Stop the worker's ability to process**
+
+The real test is: can a job survive sitting in Redis while nothing is around to process it, for a real amount of time — then get processed once something comes back? You don't need to race anything for this.
+
+**Method — temporarily comment out the worker, restart, generate clicks, confirm they're stuck, then bring the worker back**
+
+**Step 1** — Temporarily disable the worker import in server.js:
+
+```javascript
+    // import analyticsWorker from './src/workers/analytics.worker.js'; // commented out
+```
+
+**Step 2** — Restart your server. Now your API is running and enqueueing jobs, but nothing is consuming them.
+
+**Step 3** — Hit a redirect a few times in Postman, as many as you like, no rush.
+
+**Step 4** — Confirm in MongoDB that zero new ClickEvent documents exist for those redirects — this proves the click data isn't in Mongo yet.
+
+**Step 5** — Confirm the jobs are genuinely sitting in Redis, waiting, using redis-cli:
+
+```bash
+    redis-cli
+    KEYS bull:analytics:*
+```
+
+You should see BullMQ's internal keys for the analytics queue — this is the actual, visible proof that your click data exists somewhere durable, just not yet in MongoDB.
+
+**Step 6** — Re-enable the worker import in server.js, restart the server.
+
+**Step 7** — Check MongoDB again — those ClickEvent documents should now appear, timestamped at whatever moment the worker actually processed them (likely just now, not when you originally clicked) — even though the redirects themselves happened minutes ago while the worker was off.
+
+## 🏆 Achievements & Results:
+✅ Succesfully implemented BullMQ and shrinks the durability gap  
