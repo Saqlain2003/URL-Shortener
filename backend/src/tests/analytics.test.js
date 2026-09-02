@@ -86,3 +86,21 @@ describe('GET /api/analytics/:shortCode', () => {
     expect(directEntry.count).toBe(1);
   });
 });
+
+describe('GET /api/stats', () => {
+  it('returns global system stats', async () => {
+    // We already have 2 links created from previous tests in this file,
+    // and 3 clicks on the second link.
+    const res = await request(app).get('/api/stats');
+    
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('totalLinks');
+    expect(res.body).toHaveProperty('totalClicks');
+    expect(res.body).toHaveProperty('activeUsers');
+    expect(res.body).toHaveProperty('topLinks');
+    expect(typeof res.body.totalLinks).toBe('number');
+    expect(typeof res.body.totalClicks).toBe('number');
+    expect(typeof res.body.activeUsers).toBe('number');
+    expect(Array.isArray(res.body.topLinks)).toBe(true);
+  });
+});

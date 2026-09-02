@@ -1,5 +1,5 @@
 import express from 'express';
-//import cors from 'cors';
+import cors from 'cors';
 import pinoHttp from 'pino-http';
 import { randomUUID } from 'crypto';
 import logger from './config/logger.js';
@@ -24,7 +24,7 @@ app.use((req, res, next) => {
   next();
 });
 
-//app.use(cors()); // enable CORS for all routes
+app.use(cors()); // enable CORS for all routes
 app.use(express.json()); // parse JSON request bodies
 
 app.use(

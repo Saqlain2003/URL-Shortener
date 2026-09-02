@@ -8,7 +8,8 @@ import {
   getMyUrls,
   getQrCode,
   downloadQrCode,
-  getUrlTimeSeries
+  getUrlTimeSeries,
+  getSystemStats
 } from '../controllers/url.controller.js';
 import { protect, optionalAuth } from '../middlewares/auth.middleware.js';
 import { rateLimiter } from '../middlewares/rateLimiter.middleware.js';
@@ -80,6 +81,18 @@ router.post('/shorten', rateLimiter, optionalAuth, shortenUrl);
  *         description: Missing or invalid token
  */
 router.get('/api/urls/my', protect, getMyUrls);
+
+/**
+ * @openapi
+ * /api/stats:
+ *   get:
+ *     summary: Get global system stats
+ *     tags: [Stats]
+ *     responses:
+ *       200:
+ *         description: Global stats retrieved
+ */
+router.get('/api/stats', getSystemStats);
 
 /**
  * @openapi

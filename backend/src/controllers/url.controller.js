@@ -12,6 +12,7 @@ import { getAnalytics,
 import { isValidUrl, isValidAlias } from '../utils/validators.js';
 import Sentry from '../config/sentry.js';
 import Url from '../models/Url.js';
+import User from '../models/User.js';
 import { analyticsQueue } from '../queues/analytics.queue.js';
 
 export const shortenUrl = async (req, res) => {
@@ -226,6 +227,27 @@ export const downloadQrCode = async (req, res) => {
   } catch (error) {
     req.log.error({ err: error, shortCode: req.params.shortCode }, 'Failed to download QR code');
     Sentry.captureException(error, { extra: { shortCode: req.params.shortCode } });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const getSystemStats = async (req, res) => {
+  try {
+    const totalLinks = await Url.countDocuments();
+    const clicksAggr = await Url.aggregate([{ $group: { _id: null, total: { $sum: '$click_count' } } }]);
+    const totalClicks = clicksAggr[0]?.total || 0;
+    const activeUsers = await User.countDocuments();
+    
+    // Fetch top 3 most clicked URLs
+    const topLinks = await Url.find({ click_count: { $gt: 0 } })
+                              .sort({ click_count: -1 })
+                              .limit(3)
+                              .select('short_code long_url click_count -_id');
+
+    res.status(200).json({ totalLinks, totalClicks, activeUsers, topLinks });
+  } catch (error) {
+    req.log.error({ err: error }, 'Failed to fetch global stats');
+    Sentry.captureException(error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
