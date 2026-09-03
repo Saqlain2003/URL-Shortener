@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Redis snapshots
+dump.rdb
+*.rdb
+
+# Environment variables
+.env
+.env.*
+*.env
+
+# Build outputs
+dist/
+
+# Logs
+logs/
+*.log
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
