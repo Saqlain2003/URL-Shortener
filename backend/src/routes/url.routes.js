@@ -9,6 +9,7 @@ import {
   getQrCode,
   downloadQrCode,
   getUrlTimeSeries,
+  getUrlClickLogs,
   getSystemStats
 } from '../controllers/url.controller.js';
 import { protect, optionalAuth } from '../middlewares/auth.middleware.js';
@@ -159,8 +160,8 @@ router.get('/api/qr/:shortCode/download', downloadQrCode);
  *       404:
  *         description: Short code not found
  */
-router.delete('/urls/:shortCode', deleteUrl);
-router.put('/urls/:shortCode', editUrl);
+router.delete(['/urls/:shortCode', '/api/urls/:shortCode'], deleteUrl);
+router.put(['/urls/:shortCode', '/api/urls/:shortCode'], editUrl);
 
 /**
  * @openapi
@@ -214,6 +215,7 @@ router.get('/api/analytics/:shortCode', getUrlAnalytics); // must stay ABOVE the
  *         description: Short code was never created
  */
 router.get('/api/analytics/:shortCode/timeseries', getUrlTimeSeries);
+router.get('/api/analytics/:shortCode/clicks', getUrlClickLogs);
 
 /**
  * @openapi

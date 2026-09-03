@@ -22,15 +22,28 @@ export const getAnalytics = async (shortCode) => {
     { $sort: { count: -1 } },
   ]);
 
+  const clicksByCityRaw = await ClickEvent.aggregate([
+    { $match: { short_code: shortCode } },
+    { $group: { _id: { country: '$country', city: '$city' }, count: { $sum: 1 } } },
+    { $sort: { count: -1 } },
+  ]);
+
+  const clicksByCity = clicksByCityRaw.map((item) => ({
+    country: item._id?.country || 'unknown',
+    city: item._id?.city || 'unknown',
+    count: item.count,
+  }));
+
   const recentClicks = await ClickEvent.find({ short_code: shortCode })
     .sort({ timestamp: -1 })
-    .limit(10)
-    .select('referrer country city timestamp -_id');
+    .limit(100)
+    .select('referrer country city user_agent timestamp -_id');
 
   return {
     shortCode,
     totalClicks,
     clicksByCountry,
+    clicksByCity,
     clicksByReferrer,
     recentClicks,
   };

@@ -55,13 +55,22 @@ export const getOriginalUrl = async (shortCode) => {
   }
 
   // 2. Cache miss - query MongoDB
-  const url = await Url.findOne({ short_code: shortCode, is_active: true });
+  const url = await Url.findOne({ short_code: shortCode });
 
-  if(!url) {
+  if (!url || !url.is_active) {
     logger.debug('SETTING NEGATIVE CACHE FOR:', shortCode);
-    // negative cache — protects against repeated lookups for a code that doesn't exist
+    // negative cache — protects against repeated lookups for a code that doesn't exist or is deactivated
     await redisClient.setEx(cacheKey, NEGATIVE_CACHE_TTL_SECONDS, NULL_SENTINEL);
     return null;
+  }
+
+  // Check if link is expired by date
+  const isExpired = Boolean(url.expires_at && new Date(url.expires_at) < new Date());
+  if (isExpired) {
+    return {
+      expired: true,
+      expiresAt: url.expires_at,
+    };
   }
 
     // 3. Populate cache for next time
