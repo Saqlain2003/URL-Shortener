@@ -7,7 +7,8 @@ import * as THREE from "three";
  *
  * Creates a blazing solar disc with corona, radial rays,
  * circular flame arcs (sword slash trails), swirling tendrils,
- * and ambient fire glow — all running per-pixel on the GPU.
+ * and ambient fire glow — with 100% seamless 360-degree continuity.
+ * Eliminates polar angle branch cuts and seam artifacts.
  */
 
 const vertexShader = `
@@ -23,6 +24,13 @@ const fragmentShader = `
   varying vec2 vUv;
   uniform float uTime;
   uniform vec2 uResolution;
+
+  // 2D Rotation Helper (Continuous everywhere, zero polar seam)
+  vec2 rotate2D(vec2 v, float a) {
+    float s = sin(a);
+    float c = cos(a);
+    return mat2(c, -s, s, c) * v;
+  }
 
   float hash(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
@@ -55,94 +63,85 @@ const fragmentShader = `
   void main() {
     float aspect = uResolution.x / uResolution.y;
     vec2 uv = vUv;
-    // Sun centered exactly in the middle to halve the gap with nav
     vec2 center = vec2(0.5, 0.5);
     vec2 p = (uv - center) * vec2(aspect, 1.0);
 
     float dist = length(p);
-    float angle = atan(p.y, p.x);
+    vec2 dir = (dist > 0.0001) ? (p / dist) : vec2(0.0, 1.0);
 
-    // ── 1. Solar disc core + corona ──
+    // ── 1. Solar disc core + inner glow ──
     float pulse = 0.97 + 0.03 * sin(uTime * 2.8);
     float corePulse = 0.98 + 0.02 * sin(uTime * 4.5);
 
-    float coreRadius = 0.05 * corePulse;
+    float coreRadius = 0.055 * corePulse;
     float core = smoothstep(coreRadius + 0.02, coreRadius - 0.01, dist);
     core *= 0.85 + 0.08 * sin(uTime * 7.0);
 
-    float innerGlow = smoothstep(0.16, 0.02, dist) * 0.7;
+    float innerGlow = smoothstep(0.18, 0.02, dist) * 0.75;
 
-    float coronaNoise = fbm(vec2(angle * 3.0 + uTime * 0.3, dist * 8.0 - uTime * 1.5));
-    float coronaRadius = 0.12 * pulse + 0.04 * coronaNoise;
-    float corona = smoothstep(coronaRadius + 0.06, coronaRadius - 0.01, dist);
+    // ── 2. Corona (Roiling surface noise in 2D Cartesian space) ──
+    vec2 pCorona = rotate2D(p, uTime * 0.22);
+    float coronaNoise = fbm(pCorona * 6.5 + vec2(uTime * 0.35, -uTime * 0.2));
+    float coronaRadius = 0.125 * pulse + 0.035 * coronaNoise;
+    float corona = smoothstep(coronaRadius + 0.065, coronaRadius - 0.015, dist);
     corona *= (0.7 + 0.3 * coronaNoise);
 
-    // ── 2. Radial light rays ──
-    float rayCount = 12.0;
-    float rayAngle = angle + uTime * 0.15;
-    float rays = pow(abs(sin(rayAngle * rayCount * 0.5)), 8.0);
-    rays *= smoothstep(0.45, 0.08, dist) * smoothstep(0.0, 0.08, dist);
-    float rayFlicker = 0.75 + 0.25 * sin(uTime * 3.2 + angle * 4.0);
-    rays *= rayFlicker * 0.35;
+    // ── 3. Radial light rays (Strictly even harmonics = 100% periodic & seamless) ──
+    vec2 pRays = rotate2D(p, uTime * 0.12);
+    float rayAngle = atan(pRays.y, pRays.x);
+    // 6 cycles = 12 peaks, perfectly symmetric across negative x
+    float rays1 = pow(abs(sin(rayAngle * 6.0)), 6.0);
+    rays1 *= smoothstep(0.48, 0.08, dist) * smoothstep(0.0, 0.07, dist);
+    float rayFlicker = 0.75 + 0.25 * sin(uTime * 3.2 + rayAngle * 4.0);
+    rays1 *= rayFlicker * 0.32;
 
-    float rays2 = pow(abs(sin((rayAngle + 0.26) * (rayCount + 5.0) * 0.5)), 12.0);
-    rays2 *= smoothstep(0.35, 0.06, dist) * smoothstep(0.0, 0.05, dist);
-    rays2 *= 0.15;
+    vec2 pRays2 = rotate2D(p, -uTime * 0.09 + 0.4);
+    float rayAngle2 = atan(pRays2.y, pRays2.x);
+    float rays2 = pow(abs(sin(rayAngle2 * 8.0)), 8.0);
+    rays2 *= smoothstep(0.38, 0.06, dist) * smoothstep(0.0, 0.05, dist) * 0.18;
 
-    // ── 3. Circular flame arcs (sword slash trails) ──
-    float arc1 = 0.0;
-    {
-      float a2 = angle - uTime * 0.8;
-      float ad = abs(dist - 0.2);
-      float aw = 0.025 + 0.015 * sin(a2 * 3.0);
-      float am = smoothstep(aw, 0.0, ad);
-      float as2 = smoothstep(0.0, 0.5, sin(a2 * 0.5 + 0.4));
-      as2 *= smoothstep(3.14, 2.5, abs(a2 - 1.5));
-      float an = fbm(vec2(a2 * 4.0 + uTime, dist * 12.0));
-      arc1 = am * as2 * (0.6 + 0.4 * an);
-    }
+    float rays = rays1 + rays2;
 
-    float arc2 = 0.0;
-    {
-      float a2 = angle + uTime * 0.55 + 2.0;
-      float ad = abs(dist - 0.28);
-      float aw = 0.018 + 0.012 * sin(a2 * 4.0);
-      float am = smoothstep(aw, 0.0, ad);
-      float as2 = smoothstep(0.0, 0.6, sin(a2 * 0.5 - 0.3));
-      as2 *= smoothstep(3.14, 2.0, abs(a2 - 0.8));
-      float an = fbm(vec2(a2 * 5.0 - uTime * 0.5, dist * 10.0));
-      arc2 = am * as2 * (0.5 + 0.5 * an);
-    }
+    // ── 4. Circular flame arcs (Tanjiro sword slash trails - Seamless Cartesian) ──
+    // Arc 1: radius 0.22, spinning clockwise
+    vec2 pa1 = rotate2D(p, uTime * 0.75);
+    float d1 = abs(length(pa1) - 0.22);
+    vec2 dir1 = normalize(pa1);
+    float taper1 = smoothstep(-0.5, 0.7, dir1.x * 0.8 + dir1.y * 0.6);
+    float n1 = fbm(rotate2D(pa1, -uTime * 0.4) * 11.0);
+    float arc1 = smoothstep(0.022 + 0.012 * n1, 0.0, d1) * taper1 * (0.6 + 0.4 * n1);
 
-    float arc3 = 0.0;
-    {
-      float a2 = angle - uTime * 0.35 - 1.2;
-      float ad = abs(dist - 0.35);
-      float aw = 0.02 + 0.02 * sin(a2 * 2.5);
-      float am = smoothstep(aw, 0.0, ad);
-      float as2 = smoothstep(0.0, 0.4, sin(a2 * 0.5 + 1.0));
-      float an = fbm(vec2(a2 * 3.0 + uTime * 0.7, dist * 8.0));
-      arc3 = am * as2 * (0.4 + 0.4 * an) * 0.6;
-    }
+    // Arc 2: radius 0.29, spinning counter-clockwise
+    vec2 pa2 = rotate2D(p, -uTime * 0.52 + 1.8);
+    float d2 = abs(length(pa2) - 0.29);
+    vec2 dir2 = normalize(pa2);
+    float taper2 = smoothstep(-0.6, 0.65, dir2.y * 0.8 - dir2.x * 0.6);
+    float n2 = fbm(rotate2D(pa2, uTime * 0.3) * 9.0);
+    float arc2 = smoothstep(0.019 + 0.011 * n2, 0.0, d2) * taper2 * (0.55 + 0.45 * n2);
+
+    // Arc 3: radius 0.36, slower ambient ring
+    vec2 pa3 = rotate2D(p, uTime * 0.38 - 1.2);
+    float d3 = abs(length(pa3) - 0.36);
+    vec2 dir3 = normalize(pa3);
+    float taper3 = smoothstep(-0.7, 0.6, -dir3.x * 0.7 + dir3.y * 0.7);
+    float n3 = fbm(pa3 * 8.0);
+    float arc3 = smoothstep(0.024 + 0.014 * n3, 0.0, d3) * taper3 * 0.4;
 
     float arcs = arc1 + arc2 + arc3;
 
-    // ── 4. Swirling flame tendrils ──
-    vec2 spiralUV = vec2(
-      angle / 6.2832 + uTime * 0.12,
-      dist * 3.0 - uTime * 0.4
-    );
-    float spiral = fbm(spiralUV * 4.0 + fbm(spiralUV * 2.5) * 0.8);
-    spiral *= smoothstep(0.55, 0.1, dist) * smoothstep(0.0, 0.08, dist);
-    spiral *= 0.3;
+    // ── 5. Swirling logarithmic flame tendrils (Cartesian twist) ──
+    float twist = dist * 7.5 - uTime * 0.55;
+    vec2 pSpiral = rotate2D(p, twist) * 4.5;
+    float spiral = fbm(pSpiral + fbm(pSpiral * 1.5) * 0.4);
+    spiral *= smoothstep(0.55, 0.12, dist) * smoothstep(0.01, 0.08, dist) * 0.32;
 
-    // ── 5. Outer ambient fire ──
-    vec2 ambientUV = vec2(uv.x * 2.5, uv.y * 2.0 - uTime * 0.3);
-    float ambient = fbm(ambientUV + fbm(ambientUV * 1.4) * 0.6);
-    ambient *= smoothstep(0.7, 0.15, dist) * 0.2;
+    // ── 6. Outer ambient fire ──
+    vec2 pAmbient = rotate2D(p, -uTime * 0.18) * 2.2;
+    float ambient = fbm(pAmbient + vec2(0.0, -uTime * 0.25));
+    ambient *= smoothstep(0.72, 0.18, dist) * 0.22;
 
-    // ── 6. Compose & color ramp ──
-    float totalIntensity = core + innerGlow + corona + rays + rays2 + arcs + spiral + ambient;
+    // ── 7. Compose colors ──
+    float totalIntensity = core + innerGlow + corona + rays + arcs + spiral + ambient;
     totalIntensity = clamp(totalIntensity, 0.0, 1.5);
 
     vec3 colorCrimson = vec3(0.749, 0.212, 0.047);

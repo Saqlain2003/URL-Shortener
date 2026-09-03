@@ -1,9 +1,11 @@
+import { useNavigate } from "react-router-dom";
 import { Zap, ArrowUpRight } from "lucide-react";
 
 export default function CTASection({ isAuthenticated, onOpenAuth }) {
+  const navigate = useNavigate();
+
   const handleDashboard = () => {
-    // For now, scroll to the top hero section to shorten a link
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    navigate("/dashboard");
   };
 
   return (

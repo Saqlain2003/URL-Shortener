@@ -1,26 +1,38 @@
-import { useState, useEffect } from "react";
-
 /**
- * Animated logo — the letters fill from bottom to top
- * like fire pouring into them, then pulse with a golden glow.
+ * FEWER Brand Logo Component:
+ * Features the large, crisp golden Sun & Chain Link emblem alongside
+ * the stylish chiseled Cinzel Decorative typography.
+ * Uniform and gorgeous across Landing, Dashboard, and Error pages.
  */
-export default function FlameLogo() {
-  const [filled, setFilled] = useState(false);
-
-  useEffect(() => {
-    const t = setTimeout(() => setFilled(true), 300);
-    return () => clearTimeout(t);
-  }, []);
-
+export default function FlameLogo({ size = 56, showText = true }) {
   return (
-    <div className="logo-wrap">
-      <span className="logo-base">FEWER</span>
-      <span
-        className={`logo-fill ${filled ? "filled" : ""}`}
-        style={{ clipPath: filled ? "inset(0% 0 0 0)" : "inset(100% 0 0 0)" }}
+    <div className="brand-logo-container">
+      <div
+        className="brand-logo-emblem"
+        style={{
+          width: `${size}px`,
+          height: `${size}px`,
+          aspectRatio: "1 / 1",
+        }}
       >
-        FEWER
-      </span>
+        <img
+          src="/assets/logo.png"
+          alt="FEWER Sun Emblem"
+          width={size}
+          height={size}
+          className="brand-logo-img"
+          style={{
+            width: `${size}px`,
+            height: `${size}px`,
+            aspectRatio: "1 / 1",
+            objectFit: "contain",
+          }}
+        />
+      </div>
+
+      {showText && (
+        <span className="brand-title">FEWER</span>
+      )}
     </div>
   );
 }

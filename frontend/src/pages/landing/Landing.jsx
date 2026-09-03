@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import theme from "../../constants/theme";
 import "../../styles/landing.css";
 
@@ -22,12 +23,26 @@ import { api } from "../../api/client";
  * Composes all visual layers: WebGL shader → flame arcs → embers → overlay → content.
  */
 export default function Landing() {
+  const [searchParams] = useSearchParams();
   const [forgedLink, setForgedLink] = useState(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [authIsLoginMode, setAuthIsLoginMode] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem("token"));
   const [stats, setStats] = useState({ totalLinks: 0, totalClicks: 0, activeUsers: 0, topLinks: [] });
   const [statsLoading, setStatsLoading] = useState(true);
+
+  // Auto-focus and scroll to shorten input if navigating with ?focus=shorten
+  useEffect(() => {
+    if (searchParams.get("focus") === "shorten") {
+      setTimeout(() => {
+        const input = document.getElementById("url-input");
+        if (input) {
+          input.scrollIntoView({ behavior: "smooth", block: "center" });
+          input.focus();
+        }
+      }, 250);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const fetchStats = async () => {

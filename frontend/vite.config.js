@@ -7,7 +7,12 @@ export default defineConfig({
   server: {
     proxy: {
       '/shorten': 'http://localhost:5000',
-      '/api': 'http://localhost:5000'
+      '/api': 'http://localhost:5000',
+      '/urls': 'http://localhost:5000',
+      '^/(?!dashboard|not-found|burned-out|@|src|node_modules|assets|favicon|$)[a-zA-Z0-9_-]+$': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      }
     }
   }
 })

@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import FlameLogo from "./FlameLogo";
 
 /**
@@ -7,11 +8,13 @@ export default function Navbar({ isAuthenticated, onOpenAuth, onLogout }) {
   return (
     <nav className="nav">
       <div className="nav-inner">
-        <FlameLogo />
+        <Link to="/" style={{ textDecoration: "none" }}>
+          <FlameLogo />
+        </Link>
         <div className="nav-links">
           {isAuthenticated ? (
             <>
-              <a href="#" className="nav-link">My links</a>
+              <Link to="/dashboard" className="nav-link">Dashboard</Link>
               <button className="nav-ghost" onClick={onLogout}>Log out</button>
             </>
           ) : (

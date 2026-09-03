@@ -31,7 +31,7 @@
   position: sticky; top: 0; z-index: 50;
 }
 .nav-inner {
-  max-width: 1120px; margin: 0 auto; padding: 0 28px; height: 66px;
+  max-width: 1120px; margin: 0 auto; padding: 10px 28px; min-height: 72px;
   display: flex; align-items: center; justify-content: space-between;
 }
 .nav-links { display: flex; align-items: center; gap: 20px; }
@@ -62,34 +62,8 @@
   transform: translateY(-1px);
 }
 
-/* ── Logo fill effect ────────────────────────────────────────────── */
-.logo-wrap {
-  position: relative; display: inline-block;
-  font-family: 'Inter', sans-serif;
-  font-weight: 900; font-size: 24px; letter-spacing: 2px;
-}
-.logo-base { color: rgba(255, 152, 0, 0.15); }
-.logo-fill {
-  position: absolute; top: 0; left: 0;
-  background: linear-gradient(180deg, var(--sb-core-white) 0%, var(--sb-core-gold) 35%, var(--sb-flame-orange) 70%, var(--sb-flame-crimson) 100%);
-  -webkit-background-clip: text; background-clip: text;
-  -webkit-text-fill-color: transparent;
-  transition: clip-path 1.4s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.logo-fill.filled {
-  animation: logoPulse 3s ease-in-out infinite 1.4s;
-}
-@keyframes logoPulse {
-  0%, 100% {
-    filter: drop-shadow(0 0 6px rgba(255, 213, 79, 0.5))
-            drop-shadow(0 0 12px rgba(255, 152, 0, 0.3));
-  }
-  50% {
-    filter: drop-shadow(0 0 14px rgba(255, 213, 79, 0.9))
-            drop-shadow(0 0 28px rgba(255, 152, 0, 0.6))
-            drop-shadow(0 0 42px rgba(191, 54, 12, 0.3));
-  }
-}
+/* ── Brand Logo (handled globally via index.css) ───────────────────── */
+
 
 /* ── Hero + Sun Breathing canvas ─────────────────────────────────── */
 .hero {
@@ -221,8 +195,8 @@
   justify-content: center;
   position: relative;
   z-index: 10;
-  border-top: 1px solid rgba(255, 107, 53, 0.1);
-  background: var(--bg-color);
+  border-top: 1px solid rgba(255, 152, 0, 0.08);
+  background: transparent;
 }
 
 .section-container {
@@ -248,7 +222,8 @@
 
 /* Example Section */
 .example-section {
-  background: linear-gradient(180deg, var(--bg-color) 0%, #110808 100%);
+  background: linear-gradient(180deg, transparent 0%, rgba(17, 8, 8, 0.85) 100%);
+  backdrop-filter: blur(4px);
 }
 
 .examples-grid {
@@ -717,7 +692,7 @@
   }
 }
 
-/* ── Circular flame arc overlays ─────────────────────────────────── */
+/* ── Circular flame arc overlays (Concentric with Solar Disc) ────── */
 .flame-arcs-container {
   position: fixed; top: 66px; left: 0; right: 0; bottom: 0;
   z-index: 1;
@@ -727,31 +702,31 @@
 .flame-arc {
   position: absolute;
   border-radius: 50%;
-  border: 2px solid transparent;
+  pointer-events: none;
 }
 .flame-arc-1 {
-  width: 55vmin; height: 55vmin;
-  border-top-color: rgba(255, 152, 0, 0.25);
-  border-right-color: rgba(255, 213, 79, 0.15);
-  filter: blur(2px) drop-shadow(0 0 8px rgba(255, 152, 0, 0.3));
-  animation: arcSpin1 8s linear infinite;
-  margin-top: 20%;
+  width: 52vmin; height: 52vmin;
+  border: 1.5px solid transparent;
+  border-top-color: rgba(255, 152, 0, 0.22);
+  border-right-color: rgba(255, 213, 79, 0.14);
+  filter: drop-shadow(0 0 8px rgba(255, 152, 0, 0.25));
+  animation: arcSpin1 14s linear infinite;
 }
 .flame-arc-2 {
-  width: 70vmin; height: 70vmin;
-  border-bottom-color: rgba(191, 54, 12, 0.2);
+  width: 68vmin; height: 68vmin;
+  border: 1.5px solid transparent;
+  border-bottom-color: rgba(216, 67, 21, 0.18);
   border-left-color: rgba(255, 152, 0, 0.1);
-  filter: blur(3px) drop-shadow(0 0 12px rgba(191, 54, 12, 0.25));
-  animation: arcSpin2 12s linear infinite;
-  margin-top: 18%;
+  filter: drop-shadow(0 0 10px rgba(216, 67, 21, 0.2));
+  animation: arcSpin2 20s linear infinite;
 }
 .flame-arc-3 {
-  width: 42vmin; height: 42vmin;
+  width: 38vmin; height: 38vmin;
+  border: 1px solid transparent;
   border-top-color: rgba(255, 213, 79, 0.2);
-  border-left-color: rgba(255, 152, 0, 0.15);
-  filter: blur(1px) drop-shadow(0 0 6px rgba(255, 213, 79, 0.3));
-  animation: arcSpin3 6s linear infinite;
-  margin-top: 22%;
+  border-left-color: rgba(255, 152, 0, 0.12);
+  filter: drop-shadow(0 0 6px rgba(255, 213, 79, 0.22));
+  animation: arcSpin3 10s linear infinite;
 }
 @keyframes arcSpin1 { to { transform: rotate(360deg); } }
 @keyframes arcSpin2 { to { transform: rotate(-360deg); } }
