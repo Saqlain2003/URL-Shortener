@@ -215,6 +215,32 @@ router.get('/api/analytics/:shortCode', getUrlAnalytics); // must stay ABOVE the
  *         description: Short code was never created
  */
 router.get('/api/analytics/:shortCode/timeseries', getUrlTimeSeries);
+
+/**
+ * @openapi
+ * /api/analytics/{shortCode}/clicks:
+ *   get:
+ *     summary: Get recent click logs for a short URL
+ *     tags: [Analytics]
+ *     parameters:
+ *       - in: path
+ *         name: shortCode
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *         description: Number of recent click logs to return
+ *     responses:
+ *       200:
+ *         description: Array of recent click objects (timestamp, ip, userAgent, country, device, etc.)
+ *       404:
+ *         description: Short code was never created
+ */
 router.get('/api/analytics/:shortCode/clicks', getUrlClickLogs);
 
 /**
