@@ -175,8 +175,21 @@ export default function LinkAnalytics() {
                     <MapPin size={18} />
                   </div>
                 </div>
-                <div className="stat-value" style={{ fontSize: "1.5rem" }}>
-                  {analytics?.clicksByCountry?.[0]?._id || "Unknown"}
+                <div className="stat-value" style={{ fontSize: "1.5rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  {analytics?.clicksByCountry?.[0]?._id && analytics.clicksByCountry[0]._id !== "Unknown" ? (
+                    <>
+                      <img 
+                        src={`https://flagcdn.com/24x18/${analytics.clicksByCountry[0]._id.toLowerCase()}.png`} 
+                        alt={analytics.clicksByCountry[0]._id} 
+                        style={{ borderRadius: "2px", width: "24px", height: "18px", objectFit: "cover" }}
+                      />
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {getCountryName(analytics.clicksByCountry[0]._id)}
+                      </span>
+                    </>
+                  ) : (
+                    "Unknown"
+                  )}
                 </div>
                 <div className="stat-hint">
                   {analytics?.clicksByCountry?.[0]?.count ? `${analytics.clicksByCountry[0].count} clicks` : "No geo data yet"}
@@ -266,8 +279,16 @@ export default function LinkAnalytics() {
                       return (
                         <div key={idx} className="breakdown-row">
                           <div className="breakdown-meta">
-                            <span className="breakdown-label" title={`${countryName} (${geo._id})`}>
-                              <span style={{ fontSize: "1.2rem", lineHeight: 1 }}>{flag}</span>
+                            <span className="breakdown-label" title={`${countryName} (${geo._id})`} style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+                              {geo._id && geo._id !== "Unknown" ? (
+                                <img 
+                                  src={`https://flagcdn.com/16x12/${geo._id.toLowerCase()}.png`} 
+                                  alt={geo._id} 
+                                  style={{ borderRadius: "2px", width: "16px", height: "12px" }}
+                                />
+                              ) : (
+                                <span style={{ fontSize: "1.2rem", lineHeight: 1 }}>🌐</span>
+                              )}
                               <span>{countryName}</span>
                             </span>
                             <span className="breakdown-count">
@@ -452,7 +473,15 @@ export default function LinkAnalytics() {
                                 </td>
                                 <td style={{ whiteSpace: "nowrap" }}>
                                   <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
-                                    <span style={{ fontSize: "1.1rem" }}>{flag}</span>
+                                    {click.country && click.country !== "Unknown" ? (
+                                      <img 
+                                        src={`https://flagcdn.com/16x12/${click.country.toLowerCase()}.png`} 
+                                        alt={click.country} 
+                                        style={{ borderRadius: "2px", width: "16px", height: "12px" }}
+                                      />
+                                    ) : (
+                                      <span style={{ fontSize: "1.1rem" }}>🌐</span>
+                                    )}
                                     <span style={{ fontWeight: 500 }}>{countryName}</span>
                                   </div>
                                 </td>
