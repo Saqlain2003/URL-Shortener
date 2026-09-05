@@ -22,7 +22,7 @@ export default function ExampleSection({ topLinks = [] }) {
                 </span>
                 <ArrowRight size={16} className="arrow-icon" />
                 <span className="short-url">
-                  {backendBase.replace(/^https?:\/\//, '')}/{link.short_code}
+                  {`${backendBase}/${link.short_code}`.replace(/([^:]\/)\/+/g, "$1").replace(/^https?:\/\//, '')}
                 </span>
               </div>
               <div className="example-stats">

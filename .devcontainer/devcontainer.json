@@ -2,16 +2,17 @@
   "name": "Fewer URL Shortener",
   "dockerComposeFile": "../docker-compose.yml",
   "service": "backend",
-  "workspaceFolder": "/workspace",
   "forwardPorts": [5173, 5000, 27017, 6379],
   "portsAttributes": {
     "5173": {
       "label": "Frontend",
-      "onAutoForward": "notify"
+      "onAutoForward": "notify",
+      "visibility": "public"
     },
     "5000": {
       "label": "Backend API",
-      "onAutoForward": "silent"
+      "onAutoForward": "silent",
+      "visibility": "public"
     }
   },
   "customizations": {
@@ -22,6 +23,5 @@
         "mongodb.mongodb-vscode"
       ]
     }
-  },
-  "postCreateCommand": "npm install --prefix backend && npm install --prefix frontend"
+  }
 }

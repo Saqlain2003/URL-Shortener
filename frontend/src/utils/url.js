@@ -4,5 +4,5 @@
  */
 export const getShortUrl = (shortCode) => {
   const base = import.meta.env.VITE_API_BASE || window.location.origin;
-  return `${base}/${shortCode}`;
+  return `${base}/${shortCode}`.replace(/([^:]\/)\/+/g, "$1");
 };

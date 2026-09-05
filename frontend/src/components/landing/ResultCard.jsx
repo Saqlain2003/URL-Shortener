@@ -10,7 +10,7 @@ export default function ResultCard({ result }) {
   const backendBase = import.meta.env.VITE_API_BASE || '';
   const shortCode = result?.shortCode || "h1n0km1";
   const originalUrl = result?.longUrl || "https://example.com/very/long/url";
-  const shortUrl = `${backendBase}/${shortCode}`;
+  const shortUrl = `${backendBase}/${shortCode}`.replace(/([^:]\/)\/+/g, "$1");
 
   const handleCopy = () => {
     navigator.clipboard.writeText(shortUrl);

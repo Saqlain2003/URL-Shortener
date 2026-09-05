@@ -1,5 +1,10 @@
 const API_BASE = import.meta.env.VITE_API_BASE || '';
 
+// Clean up duplicate slashes during path concatenation
+const buildUrl = (base, endpoint) => {
+  return `${base}/${endpoint}`.replace(/([^:]\/)\/+/g, "$1");
+};
+
 const getHeaders = (hasBody = true) => {
   const headers = {};
   if (hasBody) {
@@ -14,7 +19,7 @@ const getHeaders = (hasBody = true) => {
 
 export const apiClient = {
   async get(endpoint) {
-    const res = await fetch(`${API_BASE}${endpoint}`, {
+    const res = await fetch(buildUrl(API_BASE, endpoint), {
       headers: getHeaders(false),
     });
     let data;
@@ -28,7 +33,7 @@ export const apiClient = {
   },
   
   async post(endpoint, body) {
-    const res = await fetch(`${API_BASE}${endpoint}`, {
+    const res = await fetch(buildUrl(API_BASE, endpoint), {
       method: 'POST',
       headers: getHeaders(true),
       body: JSON.stringify(body)
@@ -46,7 +51,7 @@ export const apiClient = {
   },
 
   async put(endpoint, body) {
-    const res = await fetch(`${API_BASE}${endpoint}`, {
+    const res = await fetch(buildUrl(API_BASE, endpoint), {
       method: 'PUT',
       headers: getHeaders(true),
       body: JSON.stringify(body)
@@ -64,7 +69,7 @@ export const apiClient = {
   },
 
   async delete(endpoint) {
-    const res = await fetch(`${API_BASE}${endpoint}`, {
+    const res = await fetch(buildUrl(API_BASE, endpoint), {
       method: 'DELETE',
       headers: getHeaders(false)
     });
@@ -94,7 +99,7 @@ export const api = {
     update: (shortCode, payload) => apiClient.put(`/urls/${shortCode}`, payload),
     delete: (shortCode) => apiClient.delete(`/urls/${shortCode}`),
     getQr: (shortCode) => apiClient.get(`/api/qr/${shortCode}`),
-    getQrDownloadUrl: (shortCode) => `${API_BASE}/api/qr/${shortCode}/download`,
+    getQrDownloadUrl: (shortCode) => `${API_BASE}/api/qr/${shortCode}/download`.replace(/([^:]\/)\/+/g, "$1"),
     getAnalytics: (shortCode) => apiClient.get(`/api/analytics/${shortCode}`),
     getTimeSeries: (shortCode, days = 7) => apiClient.get(`/api/analytics/${shortCode}/timeseries?days=${days}`),
   }
