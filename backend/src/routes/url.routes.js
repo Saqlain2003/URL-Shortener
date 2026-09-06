@@ -12,6 +12,7 @@ import {
   getUrlClickLogs,
   getSystemStats
 } from '../controllers/url.controller.js';
+import { streamClickEvents } from '../controllers/stream.controller.js';
 import { protect, optionalAuth } from '../middlewares/auth.middleware.js';
 import { rateLimiter } from '../middlewares/rateLimiter.middleware.js';
 
@@ -181,6 +182,24 @@ router.put(['/urls/:shortCode', '/api/urls/:shortCode'], editUrl);
  *       404:
  *         description: Short code was never created
  */
+/**
+ * @openapi
+ * /api/analytics/{shortCode}/stream:
+ *   get:
+ *     summary: Server-Sent Events (SSE) stream for real-time analytics updates
+ *     tags: [Analytics]
+ *     parameters:
+ *       - in: path
+ *         name: shortCode
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Event stream established
+ */
+router.get('/api/analytics/:shortCode/stream', streamClickEvents);
+
 router.get('/api/analytics/:shortCode', getUrlAnalytics); // must stay ABOVE the catch-all below
 
 // TEMPORARY — remove after confirming Sentry works

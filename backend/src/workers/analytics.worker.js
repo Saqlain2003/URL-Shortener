@@ -2,6 +2,7 @@ import { Worker } from 'bullmq';
 import connection from '../queues/connection.js';
 import logger from '../config/logger.js';
 import Sentry from '../config/sentry.js';
+import redisClient from '../config/redis.js';
 import { processClickJob } from '../services/clickProcessor.service.js';
 
 const worker = new Worker(
@@ -12,6 +13,16 @@ const worker = new Worker(
 
 worker.on('completed', (job) => {
   logger.debug({ jobId: job.id, shortCode: job.data.shortCode }, 'Click event recorded');
+  
+  // Publish an event to the Redis channel for SSE updates
+  if (job.data && job.data.shortCode) {
+    redisClient.publish(`analytics:${job.data.shortCode}`, JSON.stringify({
+      type: 'click_recorded',
+      shortCode: job.data.shortCode
+    })).catch(err => {
+      logger.error({ err }, 'Failed to publish analytics event to Redis');
+    });
+  }
 });
 
 worker.on('failed', (job, err) => {

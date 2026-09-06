@@ -100,6 +100,7 @@ export const api = {
     delete: (shortCode) => apiClient.delete(`/urls/${shortCode}`),
     getQr: (shortCode) => apiClient.get(`/api/qr/${shortCode}`),
     getQrDownloadUrl: (shortCode) => `${API_BASE}/api/qr/${shortCode}/download`.replace(/([^:]\/)\/+/g, "$1"),
+    getStreamUrl: (shortCode) => buildUrl(API_BASE, `/api/analytics/${shortCode}/stream`),
     getAnalytics: (shortCode) => apiClient.get(`/api/analytics/${shortCode}`),
     getTimeSeries: (shortCode, days = 7) => apiClient.get(`/api/analytics/${shortCode}/timeseries?days=${days}`),
   }

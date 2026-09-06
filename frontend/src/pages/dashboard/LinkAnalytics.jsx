@@ -37,6 +37,25 @@ export default function LinkAnalytics() {
 
   useEffect(() => {
     fetchData();
+
+    // Connect to Server-Sent Events (SSE) for real-time updates
+    const streamUrl = api.urls.getStreamUrl(shortCode);
+    const eventSource = new EventSource(streamUrl);
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'click_recorded') {
+          fetchData(true); // Background refresh without spinner
+        }
+      } catch (err) {
+        console.error("Failed to parse SSE event", err);
+      }
+    };
+    
+    return () => {
+      eventSource.close();
+    };
   }, [shortCode, days]);
 
   const fetchData = async (isBackground = false) => {
