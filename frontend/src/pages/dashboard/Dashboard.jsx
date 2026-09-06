@@ -56,12 +56,6 @@ export default function Dashboard() {
       return;
     }
     fetchUrls();
-
-    const interval = setInterval(() => {
-      fetchUrls(true);
-    }, 5000);
-
-    return () => clearInterval(interval);
   }, [navigate]);
 
   const fetchUrls = async (isBackground = false) => {

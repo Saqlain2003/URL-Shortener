@@ -37,12 +37,6 @@ export default function LinkAnalytics() {
 
   useEffect(() => {
     fetchData();
-
-    const interval = setInterval(() => {
-      fetchData(true);
-    }, 5000);
-
-    return () => clearInterval(interval);
   }, [shortCode, days]);
 
   const fetchData = async (isBackground = false) => {
