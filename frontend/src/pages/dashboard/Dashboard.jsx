@@ -49,7 +49,6 @@ export default function Dashboard() {
     }, 3000);
   };
 
-  // Check auth & fetch user links
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) {
@@ -57,18 +56,24 @@ export default function Dashboard() {
       return;
     }
     fetchUrls();
+
+    const interval = setInterval(() => {
+      fetchUrls(true);
+    }, 5000);
+
+    return () => clearInterval(interval);
   }, [navigate]);
 
-  const fetchUrls = async () => {
-    setLoading(true);
-    setError("");
+  const fetchUrls = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
+    if (!isBackground) setError("");
     try {
       const data = await api.urls.getMyUrls();
       setUrls(data.urls || []);
     } catch (err) {
-      setError(err.message || "Failed to fetch your shortened links.");
+      if (!isBackground) setError(err.message || "Failed to fetch your shortened links.");
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 

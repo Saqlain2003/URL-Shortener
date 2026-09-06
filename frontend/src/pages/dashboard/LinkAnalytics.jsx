@@ -37,11 +37,17 @@ export default function LinkAnalytics() {
 
   useEffect(() => {
     fetchData();
+
+    const interval = setInterval(() => {
+      fetchData(true);
+    }, 5000);
+
+    return () => clearInterval(interval);
   }, [shortCode, days]);
 
-  const fetchData = async () => {
-    setLoading(true);
-    setError("");
+  const fetchData = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
+    if (!isBackground) setError("");
     try {
       const [analyticsData, timeSeriesData] = await Promise.all([
         api.urls.getAnalytics(shortCode),
@@ -50,9 +56,9 @@ export default function LinkAnalytics() {
       setAnalytics(analyticsData);
       setTimeSeries(timeSeriesData.timeSeries || []);
     } catch (err) {
-      setError(err.message || "Failed to load link analytics.");
+      if (!isBackground) setError(err.message || "Failed to load link analytics.");
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
