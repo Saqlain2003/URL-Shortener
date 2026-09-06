@@ -5,7 +5,7 @@ import Url from '../models/Url.js';
 export const processClickJob = async ({ shortCode, referrer, userAgent, ip }) => {
   const geo = geoip.lookup(ip) || {};
 
-  await Promise.all([
+  const results = await Promise.all([
     ClickEvent.create({
       short_code: shortCode,
       referrer: referrer || 'direct',
