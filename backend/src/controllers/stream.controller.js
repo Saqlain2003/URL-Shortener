@@ -19,6 +19,11 @@ const initSubscriber = async () => {
         const shortCode = channel.split(':')[1];
         eventEmitter.emit(`click:${shortCode}`, message);
       });
+      // Subscribe to all dashboard channels
+      await subscriberClient.pSubscribe('dashboard:*', (message, channel) => {
+        const userId = channel.split(':')[1];
+        eventEmitter.emit(`dashboard:${userId}`, message);
+      });
       logger.info('Redis Pub/Sub subscriber connected for SSE streams');
     } catch (err) {
       logger.error({ err }, 'Failed to initialize Redis subscriber for SSE');
@@ -53,5 +58,28 @@ export const streamClickEvents = async (req, res) => {
   // Cleanup when client disconnects
   req.on('close', () => {
     eventEmitter.off(`click:${shortCode}`, onUpdate);
+  });
+};
+
+export const streamDashboardEvents = async (req, res) => {
+  const userId = req.user.id;
+
+  await initSubscriber();
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  res.write(`data: ${JSON.stringify({ type: 'connected', userId })}\n\n`);
+
+  const onUpdate = (message) => {
+    res.write(`data: ${message}\n\n`);
+  };
+
+  eventEmitter.on(`dashboard:${userId}`, onUpdate);
+
+  req.on('close', () => {
+    eventEmitter.off(`dashboard:${userId}`, onUpdate);
   });
 };

@@ -14,9 +14,12 @@ export const processClickJob = async ({ shortCode, referrer, userAgent, ip }) =>
       country: geo.country || 'unknown',
       city: geo.city || 'unknown',
     }),
-    Url.updateOne(
+    Url.findOneAndUpdate(
       { short_code: shortCode },
-      { $inc: { click_count: 1 } }
+      { $inc: { click_count: 1 } },
+      { new: true, select: 'user_id' }
     ),
   ]);
+
+  return results[1];
 };

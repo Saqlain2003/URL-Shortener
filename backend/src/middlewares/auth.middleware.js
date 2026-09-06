@@ -4,12 +4,17 @@ import Sentry from '../config/sentry.js';
 // REQUIRED auth — blocks the request if no valid token
 export const protect = (req, res, next) => {
   const authHeader = req.headers.authorization;
+  let token;
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'No token provided' });
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.query.token) {
+    token = req.query.token; // for EventSource/SSE
   }
 
-  const token = authHeader.split(' ')[1];
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
 
   try {
     const decoded = verifyToken(token);
@@ -24,12 +29,17 @@ export const protect = (req, res, next) => {
 // OPTIONAL auth — attaches req.user if a valid token exists, but doesn't block the request otherwise
 export const optionalAuth = (req, res, next) => {
   const authHeader = req.headers.authorization;
+  let token;
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return next(); // no token — proceed as anonymous
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.query.token) {
+    token = req.query.token;
   }
 
-  const token = authHeader.split(' ')[1];
+  if (!token) {
+    return next(); // no token — proceed as anonymous
+  }
 
   try {
     const decoded = verifyToken(token);

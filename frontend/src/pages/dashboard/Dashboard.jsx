@@ -56,6 +56,24 @@ export default function Dashboard() {
       return;
     }
     fetchUrls();
+
+    const streamUrl = api.urls.getDashboardStreamUrl();
+    const eventSource = new EventSource(streamUrl);
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'dashboard_update') {
+          fetchUrls(true);
+        }
+      } catch (err) {
+        console.error("Failed to parse SSE event", err);
+      }
+    };
+    
+    return () => {
+      eventSource.close();
+    };
   }, [navigate]);
 
   const fetchUrls = async (isBackground = false) => {

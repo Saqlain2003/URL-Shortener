@@ -11,7 +11,7 @@ const worker = new Worker(
   { connection, concurrency: 5 }
 );
 
-worker.on('completed', (job) => {
+worker.on('completed', (job, result) => {
   logger.debug({ jobId: job.id, shortCode: job.data.shortCode }, 'Click event recorded');
   
   // Publish an event to the Redis channel for SSE updates
@@ -22,6 +22,14 @@ worker.on('completed', (job) => {
     })).catch(err => {
       logger.error({ err }, 'Failed to publish analytics event to Redis');
     });
+
+    if (result && result.user_id) {
+      redisClient.publish(`dashboard:${result.user_id}`, JSON.stringify({
+        type: 'dashboard_update'
+      })).catch(err => {
+        logger.error({ err }, 'Failed to publish dashboard event to Redis');
+      });
+    }
   }
 });
 

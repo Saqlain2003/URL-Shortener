@@ -95,6 +95,7 @@ export const api = {
   },
   urls: {
     getMyUrls: () => apiClient.get('/api/urls/my'),
+    getDashboardStreamUrl: () => buildUrl(API_BASE, `/api/urls/my/stream?token=${localStorage.getItem('token')}`),
     create: (payload) => apiClient.post('/shorten', payload),
     update: (shortCode, payload) => apiClient.put(`/urls/${shortCode}`, payload),
     delete: (shortCode) => apiClient.delete(`/urls/${shortCode}`),

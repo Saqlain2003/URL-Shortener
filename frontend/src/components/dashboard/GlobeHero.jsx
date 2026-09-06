@@ -700,7 +700,7 @@ export default function GlobeHero({ clicksByCountry = [], clicksByCity = [] }) {
           }}>
             <span style={{ fontSize: "0.82rem", color: "#A1887F" }}>Total Clicks</span>
             <span style={{ fontSize: "1.1rem", fontWeight: 800, color: "#FFD54F" }}>
-              {selectedCountry.clicks}
+              {countryClickMap[selectedCountry.code] || selectedCountry.clicks}
             </span>
           </div>
 

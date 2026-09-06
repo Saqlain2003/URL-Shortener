@@ -12,7 +12,7 @@ import {
   getUrlClickLogs,
   getSystemStats
 } from '../controllers/url.controller.js';
-import { streamClickEvents } from '../controllers/stream.controller.js';
+import { streamClickEvents, streamDashboardEvents } from '../controllers/stream.controller.js';
 import { protect, optionalAuth } from '../middlewares/auth.middleware.js';
 import { rateLimiter } from '../middlewares/rateLimiter.middleware.js';
 
@@ -83,6 +83,17 @@ router.post('/shorten', rateLimiter, optionalAuth, shortenUrl);
  *         description: Missing or invalid token
  */
 router.get('/api/urls/my', protect, getMyUrls);
+
+/**
+ * @openapi
+ * /api/urls/my/stream:
+ *   get:
+ *     summary: SSE stream for dashboard updates (requires token via query param or header)
+ *     tags: [URLs]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/api/urls/my/stream', protect, streamDashboardEvents);
 
 /**
  * @openapi
